@@ -2382,6 +2382,7 @@ loadSettings();
 // Current Deriv OAuth callback is ?code=...&state=... .
 // Do not use the old acct1/token1 callback format here.
 const __hadOAuthCallback = (window.location.search || '').includes('code=');
+const __hadSavedToken = false;
 
 (async function bootOAuth() {
   try {
@@ -2415,7 +2416,7 @@ if(window.innerWidth<=768)document.getElementById('mobileMenuBtn').style.display
   function hideSplash(){ splash.classList.add('hidden'); setTimeout(() => splash.remove(), 600); }
   // If user is arriving back from OAuth, or has a saved session, skip straight in
   // (using the flags captured at the top of BOOT, before the URL was rewritten).
-  const quick = __hadOAuthCallback || __hadSavedToken;
+  const quick = __hadOAuthCallback;
   if(quick) {
     document.getElementById('landingPage').classList.add('hidden');
   }
