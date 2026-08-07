@@ -52,7 +52,7 @@ input,select,textarea{font-family:var(--font);outline:none}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
 /* ─── LAYOUT ─────────────────────────────── */
-#app{display:flex;height:100vh;overflow:hidden}
+#{display:flex;height:100vh;overflow:hidden}
 .sidebar{width:230px;min-width:230px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:width .25s;position:relative;z-index:50}
 .sidebar.collapsed{width:58px;min-width:58px}
 .sidebar.collapsed .nav-label,.sidebar.collapsed .nav-text,.sidebar.collapsed .logo-name,.sidebar.collapsed .sidebar-user-info,.sidebar.collapsed .sidebar-version{display:none}
@@ -138,12 +138,12 @@ input,select,textarea{font-family:var(--font);outline:none}
 .form-control{width:100%;padding:9px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--text);transition:.15s}
 .form-control:focus{border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-dim)}
 .form-control::placeholder{color:var(--text3)}
-select.form-control{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%238ba3c7' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:14px;padding-right:30px}
+select.form-control{cursor:pointer;earance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%238ba3c7' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:14px;padding-right:30px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .range-wrap{position:relative}
-.range-wrap input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:var(--border2);outline:none;cursor:pointer}
-.range-wrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan-glow)}
+.range-wrap input[type=range]{-webkit-earance:none;width:100%;height:4px;border-radius:2px;background:var(--border2);outline:none;cursor:pointer}
+.range-wrap input[type=range]::-webkit-slider-thumb{-webkit-earance:none;width:16px;height:16px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan-glow)}
 .range-val{position:absolute;right:0;top:-22px;font-size:12px;color:var(--cyan);font-family:var(--mono);font-weight:700}
 
 /* ─── BADGES & TAGS ──────────────────────── */
@@ -326,8 +326,8 @@ tr:last-child td{border-bottom:none}
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
-<!-- APP -->
-<div id="app" class="hidden">
+<!--  -->
+<div id="" class="hidden">
 
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
@@ -407,16 +407,16 @@ tr:last-child td{border-bottom:none}
 //  Full WebSocket API integration + Deriv OAuth login
 // ════════════════════════════════════════════════════
 
-// ─── DERIV APP CONFIG ───────────────────────────────
-// You MUST register your own application at https://api.deriv.com/
-// ("Manage applications" -> "Register application"), then:
-//   1. Set the app's "Redirect URI" to the exact URL where this page is hosted
+// ─── DERIV  CONFIG ───────────────────────────────
+// You MUST register your own lication at https://api.deriv.com/
+// ("Manage lications" -> "Register lication"), then:
+//   1. Set the 's "Redirect URI" to the exact URL where this page is hosted
 //      (must be https:// and publicly reachable — OAuth will not work on
 //      localhost, file://, or a URL that doesn't match exactly).
-//   2. Copy the app_id it gives you and paste it below.
-// The placeholder app_id (1089) is Deriv's public demo app id and is rate
+//   2. Copy the _id it gives you and paste it below.
+// The placeholder _id (1089) is Deriv's public demo  id and is rate
 // limited / not meant for production — replace it before going live.
-const DERIV_APP_ID = 1089; // TODO: replace with your own app_id
+const DERIV__ID = 3430YlOKM0lPq9LGOziIJ; // TODO: replace with your own _id
 
 // ─── STATE ──────────────────────────────────────────
 const S = {
