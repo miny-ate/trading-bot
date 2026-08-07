@@ -52,7 +52,7 @@ input,select,textarea{font-family:var(--font);outline:none}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
 /* ─── LAYOUT ─────────────────────────────── */
-#{display:flex;height:100vh;overflow:hidden}
+#app{display:flex;height:100vh;overflow:hidden}
 .sidebar{width:230px;min-width:230px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:width .25s;position:relative;z-index:50}
 .sidebar.collapsed{width:58px;min-width:58px}
 .sidebar.collapsed .nav-label,.sidebar.collapsed .nav-text,.sidebar.collapsed .logo-name,.sidebar.collapsed .sidebar-user-info,.sidebar.collapsed .sidebar-version{display:none}
@@ -664,7 +664,7 @@ body::before {
   </div>
 </div>
 <!-- LOGIN -->
-<div class="login-screen" id="loginScreen">
+<div class="login-screen hidden" id="loginScreen">
   <canvas id="starfieldLogin"></canvas>
   <div class="login-box">
     <button class="lp-back-btn" onclick="backToLanding()" title="Back">←</button>
@@ -692,7 +692,7 @@ body::before {
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
-<!--  -->
+<!-- APP SHELL -->
 <div id="app" class="hidden">
 
   <!-- SIDEBAR -->
@@ -773,16 +773,16 @@ body::before {
 //  Full WebSocket API integration + Deriv OAuth login
 // ════════════════════════════════════════════════════
 
-// ─── DERIV  CONFIG ───────────────────────────────
-// You MUST register your own lication at https://api.deriv.com/
-// ("Manage lications" -> "Register lication"), then:
-//   1. Set the 's "Redirect URI" to the exact URL where this page is hosted
-//      (must be https:// and publicly reachable — OAuth will not work on
-//      localhost, file://, or a URL that doesn't match exactly).
-//   2. Copy the _id it gives you and paste it below.
-// The placeholder _id (1089) is Deriv's public demo  id and is rate
-// limited / not meant for production — replace it before going live.
-const DERIV_APP_ID = '3430YlOKM0lPq9LGOziIJ';
+// ─── DERIV APP CONFIG ───────────────────────────────
+// You MUST register your own application at https://api.deriv.com/
+// ("Manage applications" -> "Register application"), then:
+//   1. Set the app's "Redirect URI" to the exact URL where this page is
+//      hosted (must be https:// and publicly reachable — OAuth will not
+//      work on localhost, file://, or a URL that doesn't match exactly).
+//   2. Copy the numeric app_id it gives you and paste it below.
+// Deriv app_ids are ALWAYS numeric (e.g. 1089, 36300, 65687...). A
+// non-numeric value here will make every authorize/oauth call fail.
+const DERIV_APP_ID = '1089'; // TODO: replace with your own registered numeric app_id
 
 // ─── STATE ──────────────────────────────────────────
 const S = {
@@ -2080,11 +2080,13 @@ function logout() {
   if (S.ws) { S.connected = false; S.ws.close(); S.ws = null; }
   S.account = null; S.balance = 0;
   document.getElementById('app').classList.add('hidden');
+  document.getElementById('landingPage').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
   localStorage.removeItem('ernest_token');
 }
 function showApp() {
+  document.getElementById('landingPage').classList.add('hidden');
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   if (S.token) localStorage.setItem('ernest_token', S.token);
@@ -2127,15 +2129,25 @@ function toggleTheme(){
 // ─── BOOT ────────────────────────────────────────────
 loadSettings();
 
+// Capture OAuth / saved-session state BEFORE anything mutates location.search,
+// so the splash screen below can make an accurate "skip the intro" decision.
+const __hadOAuthCallback = (window.location.search || '').includes('acct1=');
+const __hadSavedToken = (function(){ try { return !!localStorage.getItem('ernest_token'); } catch(e){ return false; } })();
+
 // 1. If we just got redirected back from Deriv's OAuth screen, handle that first.
 // 2. Otherwise, fall back to a previously saved session token (silent reconnect).
 if (!parseDerivOAuthCallback()) {
   const savedToken = localStorage.getItem('ernest_token');
   if (savedToken) {
     S.token = savedToken;
+    document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('loginBtn').innerHTML = '<span class="spinner"></span> Reconnecting…';
     ws_connect(savedToken);
   }
+} else {
+  // We're mid-OAuth-login: keep the login screen visible (behind the splash)
+  // showing the "Connecting…" state set by finishOAuthLogin().
+  document.getElementById('loginScreen').classList.remove('hidden');
 }
 
 // Mobile menu button visibility
@@ -2150,10 +2162,9 @@ if(window.innerWidth<=768)document.getElementById('mobileMenuBtn').style.display
 (function(){
   const splash = document.getElementById('splash');
   function hideSplash(){ splash.classList.add('hidden'); setTimeout(() => splash.remove(), 600); }
-  // If user is arriving back from OAuth, skip straight in.
-  const hasOAuth = (window.location.search||'').includes('acct1=');
-  const savedToken = (function(){ try{ return localStorage.getItem('ernest_token'); }catch(e){ return null; } })();
-  const quick = hasOAuth || !!savedToken;
+  // If user is arriving back from OAuth, or has a saved session, skip straight in
+  // (using the flags captured at the top of BOOT, before the URL was rewritten).
+  const quick = __hadOAuthCallback || __hadSavedToken;
   if(quick) {
     document.getElementById('landingPage').classList.add('hidden');
   }
