@@ -470,13 +470,204 @@ body::before {
 .connection-dot.connected {
   animation: pulse-dot 1.5s ease infinite;
 }
+
+/* ═══════════════════════════════════════════════════
+   BLUEMAN-STYLE LANDING & ENHANCEMENTS
+═══════════════════════════════════════════════════ */
+
+#landingPage{position:relative;z-index:10;background:#060d1a;min-height:100vh}
+#landingPage.hidden{display:none}
+
+.login-screen.hidden{display:none}
+
+/* ─── SPLASH SCREEN ──────────────────────── */
+#splash{position:fixed;inset:0;z-index:20000;background:#060d1a;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease,visibility .5s}
+#splash.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.splash-logo{width:72px;height:72px;background:linear-gradient(135deg,var(--cyan),#0080ff);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:34px;box-shadow:0 0 40px var(--cyan-glow);animation:splashPulse 1.6s ease-in-out infinite;margin-bottom:18px}
+@keyframes splashPulse{0%,100%{box-shadow:0 0 24px var(--cyan-glow)}50%{box-shadow:0 0 48px var(--cyan-glow),0 0 80px var(--cyan-dim)}}
+.splash-name{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.5px}
+.splash-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:6px;letter-spacing:2px}
+.splash-bar{width:160px;height:3px;background:var(--border);border-radius:3px;margin-top:22px;overflow:hidden}
+.splash-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),#0080ff);border-radius:3px;animation:splashLoad 1.4s ease forwards}
+@keyframes splashLoad{0%{width:0}60%{width:72%}100%{width:100%}}
+
+/* ─── STARFIELD CANVAS ───────────────────── */
+#starfield{position:fixed;inset:0;z-index:-2;pointer-events:none}
+#starfield::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 30% 10%,rgba(88,60,200,.10) 0%,transparent 55%),radial-gradient(ellipse 55% 45% at 85% 90%,rgba(0,128,255,.07) 0%,transparent 50%)}
+
+/* ─── LANDING NAV ────────────────────────── */
+.land-nav{position:fixed;top:0;left:0;right:0;z-index:400;background:rgba(6,13,26,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;height:58px}
+.land-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.land-brand .logo-icon{width:34px;height:34px;font-size:16px}
+.land-nav-links{display:flex;align-items:center;gap:8px}
+.land-nav-links .nav-pill{font-size:12px;color:var(--text2);padding:7px 12px;border-radius:8px;font-weight:500;transition:.15s;cursor:pointer}
+.land-nav-links .nav-pill:hover{color:var(--text);background:var(--surface)}
+.land-nav-links .nav-pill.cta{background:linear-gradient(135deg,var(--cyan),#0080ff);color:#000;font-weight:700;box-shadow:0 2px 12px var(--cyan-glow)}
+.land-nav-links .nav-pill.cta:hover{box-shadow:0 4px 20px var(--cyan-glow);transform:translateY(-1px)}
+.land-nav-links .nav-pill.outline{border:1px solid var(--border2);color:var(--text)}
+.land-nav-links .nav-pill.outline:hover{border-color:var(--cyan);color:var(--cyan)}
+
+/* ─── LANDING TICKER ─────────────────────── */
+.land-ticker{margin-top:58px;background:rgba(10,22,40,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:7px 26px;display:flex;align-items:center;gap:10px;overflow:hidden;position:relative;z-index:300}
+.land-ticker .lt-tag{font-size:10px;font-weight:700;color:var(--green);font-family:var(--mono);letter-spacing:1px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+.land-ticker .lt-track{display:flex;align-items:center;gap:26px;flex:1;overflow-x:auto;scrollbar-width:none}
+.land-ticker .lt-track::-webkit-scrollbar{display:none}
+.land-ticker .lt-item{display:flex;align-items:center;gap:7px;white-space:nowrap;font-family:var(--mono);font-size:12px;flex-shrink:0}
+.land-ticker .lt-sym{font-weight:700;color:var(--text2)}
+.land-ticker .lt-price{font-weight:700;color:var(--text)}
+.land-ticker .lt-arrow{font-size:10px;font-weight:700}
+.land-ticker .lt-arrow.up{color:var(--green)}
+.land-ticker .lt-arrow.down{color:var(--red)}
+.land-ticker .lt-pct{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px}
+.land-ticker .lt-pct.up{color:var(--green);background:rgba(0,230,118,.08)}
+.land-ticker .lt-pct.down{color:var(--red);background:rgba(255,77,109,.08)}
+
+/* ─── LANDING HERO ───────────────────────── */
+.land-hero{position:relative;padding:86px 26px 56px;text-align:center;overflow:hidden}
+.land-status-chip{display:inline-flex;align-items:center;gap:8px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.25);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--cyan);font-family:var(--mono);margin-bottom:26px;animation:fadeInUp .5s ease}
+.land-status-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse-dot 1.5s ease infinite}
+.land-hero h1{font-size:clamp(34px,5.2vw,62px);font-weight:700;color:var(--text);line-height:1.08;letter-spacing:-1.5px;max-width:860px;margin:0 auto 20px}
+.land-hero h1 .grad{background:linear-gradient(90deg,var(--cyan),#7c5cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.typewriter{display:inline-block;border-right:3px solid var(--cyan);padding-right:6px;animation:blinkCaret 1s step-end infinite,typing 3.2s steps(28) .3s both}
+@keyframes blinkCaret{50%{border-color:transparent}}
+@keyframes typing{from{width:0}to{width:28ch}}
+.typewriter{overflow:hidden;white-space:nowrap;width:28ch;text-align:left;max-width:28ch}
+.land-hero .sub{font-size:clamp(14px,1.6vw,17px);color:var(--text2);max-width:560px;margin:0 auto 34px;line-height:1.65}
+.land-ctas{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:36px}
+.land-cta{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;transition:.2s;font-family:var(--font)}
+.land-cta.primary{background:linear-gradient(135deg,var(--cyan),#0080ff);color:#000;box-shadow:0 4px 24px var(--cyan-glow)}
+.land-cta.primary:hover{box-shadow:0 8px 36px var(--cyan-glow);transform:translateY(-2px)}
+.land-cta.outline{background:transparent;color:var(--text);border:1.5px solid var(--border2)}
+.land-cta.outline:hover{border-color:var(--cyan);color:var(--cyan);transform:translateY(-2px)}
+.land-trust{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:20px 26px;font-size:12px;color:var(--text2)}
+.land-trust .tr-item{display:flex;align-items:center;gap:7px}
+.land-trust .tr-item .chk{width:18px;height:18px;border-radius:50%;background:var(--green-dim);border:1px solid rgba(0,230,118,.35);color:var(--green);font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* ─── LANDING TESTIMONIALS ───────────────── */
+.land-testimonials{padding:48px 26px 70px;max-width:1040px;margin:0 auto}
+.land-testimonials .tt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.land-testimonials .tt-title{font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px}
+.land-testimonials .tt-stars{color:var(--gold);font-size:13px;letter-spacing:2px}
+.tt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.tt-card{background:linear-gradient(145deg,var(--surface),var(--surface2));border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;transition:.2s}
+.tt-card:hover{transform:translateY(-3px);border-color:rgba(0,212,255,.3);box-shadow:0 12px 36px rgba(0,0,0,.35)}
+.tt-card .tt-stars{color:var(--gold);font-size:12px;letter-spacing:1.5px;margin-bottom:10px}
+.tt-card .tt-text{font-size:13px;color:var(--text2);line-height:1.65;margin-bottom:14px;font-style:italic}
+.tt-card .tt-who{display:flex;align-items:center;gap:10px}
+.tt-card .tt-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),#0080ff);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#000;flex-shrink:0}
+.tt-card .tt-name{font-size:13px;font-weight:700;color:var(--text)}
+.tt-card .tt-role{font-size:10px;color:var(--text3);font-family:var(--mono)}
+
+/* ─── LANDING FOOTER ─────────────────────── */
+.land-foot{border-top:1px solid var(--border);padding:22px 26px;text-align:center;font-size:11px;color:var(--text3);font-family:var(--mono)}
+
+/* ─── APP SHELL FINE-TUNING (post-login) ─── */
+#app:not(.hidden){animation:fadeInUp .45s ease}
+
+@media(max-width:768px){
+  .land-nav-links .nav-pill:not(.cta):not(.outline){display:none}
+  .land-hero{padding:64px 18px 40px}
+  .land-ticker{padding:7px 14px}
+}
+
+.lp-back-btn{position:absolute;top:14px;left:14px;background:var(--surface);border:1px solid var(--border);color:var(--text2);width:34px;height:34px;border-radius:10px;font-size:15px;cursor:pointer;transition:.15s}
+.lp-back-btn:hover{border-color:var(--cyan);color:var(--cyan);background:var(--surface2)}
+.login-screen{overflow:hidden}
+.login-screen canvas{position:absolute;inset:0;z-index:0;pointer-events:none}
+.login-screen .login-box{position:relative;z-index:1}
 </style>
-</head>
 <body>
 
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-logo">⚡</div>
+  <div class="splash-name">Ernest</div>
+  <div class="splash-sub">DERIV TRADING BOT</div>
+  <div class="splash-bar"><span></span></div>
+</div>
+
+<!-- ═══ LANDING PAGE (Blueman-style) ═══ -->
+<div id="landingPage">
+  <canvas id="starfield"></canvas>
+
+  <!-- LANDING NAV -->
+  <div class="land-nav">
+    <div class="land-brand">
+      <div class="logo-icon">⚡</div>
+      <span>Ernest</span>
+      <span class="logo-tag" style="font-size:9px;color:var(--cyan);font-family:var(--mono);letter-spacing:.5px">v2.0</span>
+    </div>
+    <div class="land-nav-links">
+      <span class="nav-pill" onclick="document.getElementById('testimonials').scrollIntoView({behavior:'smooth'})">Reviews</span>
+      <span class="nav-pill" onclick="document.getElementById('landingPage').querySelector('.land-trust').scrollIntoView({behavior:'smooth'})">Features</span>
+      <span class="nav-pill outline" id="lpSignInBtn" onclick="goToLogin()">Sign In</span>
+      <span class="nav-pill cta" onclick="loginWithDeriv()">Get Started</span>
+    </div>
+  </div>
+
+  <!-- LIVE TICKER BAR -->
+  <div class="land-ticker">
+    <span class="lt-tag"><span class="dot-live"></span>LIVE</span>
+    <div class="lt-track" id="landingTickerItems"></div>
+  </div>
+
+  <!-- HERO -->
+  <div class="land-hero">
+    <div class="land-status-chip"><span class="dot"></span>Bot workspace ready ● Live</div>
+    <h1>The automated trading bot that <span class="grad typewriter" id="typewriterText">never sleeps.</span></h1>
+    <p class="sub">Build, backtest and run strategies on Deriv — Martingale, D'Alembert, Oscar's Grind and more — with real-time risk management, live stats and Telegram alerts.</p>
+    <div class="land-ctas">
+      <span class="land-cta primary" onclick="loginWithDeriv()">⚡ Launch the Bot</span>
+      <span class="land-cta outline" onclick="document.getElementById('landingPage').querySelector('.land-testimonials').scrollIntoView({behavior:'smooth'})">▶ See what traders say</span>
+    </div>
+    <div class="land-trust">
+      <span class="tr-item"><span class="chk">✓</span> Deriv OAuth — no passwords stored</span>
+      <span class="tr-item"><span class="chk">✓</span> 6 proven money-management strategies</span>
+      <span class="tr-item"><span class="chk">✓</span> Stop loss, take profit & max trades</span>
+      <span class="tr-item"><span class="chk">✓</span> Telegram alerts on every trade</span>
+      <span class="tr-item"><span class="chk">✓</span> Works on demo &amp; real accounts</span>
+    </div>
+  </div>
+
+  <!-- TESTIMONIALS -->
+  <div class="land-testimonials" id="testimonials">
+    <div class="tt-head">
+      <span class="tt-title">Trusted by algorithmic traders</span>
+      <span class="tt-stars">★★★★★</span>
+    </div>
+    <div class="tt-grid">
+      <div class="tt-card">
+        <div class="tt-stars">★★★★★</div>
+        <div class="tt-text">"The risk manager alone saved my account twice. Stop loss hit, bot stopped automatically — exactly what I needed for Martingale."</div>
+        <div class="tt-who"><div class="tt-avatar">K</div><div><div class="tt-name">Kwame A.</div><div class="tt-role">Volatility 100 · Martingale</div></div></div>
+      </div>
+      <div class="tt-card">
+        <div class="tt-stars">★★★★★</div>
+        <div class="tt-text">"Oscar's Grind on Ernest is genuinely the safest progression I've tested. Slow but steady — my drawdowns are tiny compared to before."</div>
+        <div class="tt-who"><div class="tt-avatar">F</div><div><div class="tt-name">Fatima S.</div><div class="tt-role">1s Volatility · Oscar's Grind</div></div></div>
+      </div>
+      <div class="tt-card">
+        <div class="tt-stars">★★★★★</div>
+        <div class="tt-text">"I run it on a demo account while I learn. The backtester and analysis pages make it easy to see what works before risking real money."</div>
+        <div class="tt-who"><div class="tt-avatar">D</div><div><div class="tt-name">Daniel O.</div><div class="tt-role">Demo account · D'Alembert</div></div></div>
+      </div>
+      <div class="tt-card">
+        <div class="tt-stars">★★★★☆</div>
+        <div class="tt-text">"Telegram alerts are a nice touch — I see every win and loss on my phone. The dashboard profit curve is really satisfying to watch."</div>
+        <div class="tt-who"><div class="tt-avatar">A</div><div><div class="tt-name">Amira T.</div><div class="tt-role">Jump Index · Reverse Martingale</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="land-foot">
+    ⚠️ Trading involves risk. Ernest is a tool, not financial advice. Never trade with money you cannot afford to lose. · Ernest v2.0 · Powered by Deriv WebSocket API
+  </div>
+</div>
 <!-- LOGIN -->
 <div class="login-screen" id="loginScreen">
+  <canvas id="starfieldLogin"></canvas>
   <div class="login-box">
+    <button class="lp-back-btn" onclick="backToLanding()" title="Back">←</button>
     <div class="login-logo">
       <div class="login-logo-icon">⚡</div>
       <h1 style="font-size:24px;font-weight:700;color:var(--text);margin-bottom:4px">Ernest</h1>
@@ -498,7 +689,6 @@ body::before {
     </div>
   </div>
 </div>
-
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
@@ -1955,6 +2145,124 @@ window.addEventListener('resize',()=>{
   if(window.innerWidth>768)document.getElementById('sidebar').classList.remove('mobile-open');
 });
 if(window.innerWidth<=768)document.getElementById('mobileMenuBtn').style.display='flex';
+
+// ─── SPLASH SCREEN ────────────────────────────────────
+(function(){
+  const splash = document.getElementById('splash');
+  function hideSplash(){ splash.classList.add('hidden'); setTimeout(() => splash.remove(), 600); }
+  // If user is arriving back from OAuth, skip straight in.
+  const hasOAuth = (window.location.search||'').includes('acct1=');
+  const savedToken = (function(){ try{ return localStorage.getItem('ernest_token'); }catch(e){ return null; } })();
+  const quick = hasOAuth || !!savedToken;
+  if(quick) {
+    document.getElementById('landingPage').classList.add('hidden');
+  }
+  setTimeout(() => { if(splash && !splash.classList.contains('hidden')) hideSplash(); }, quick ? 600 : 1800);
+})();
+
+// ─── LANDING PAGE NAVIGATION ─────────────────────────
+function goToLogin(){
+  document.getElementById('landingPage').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+}
+function backToLanding(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('landingPage').classList.remove('hidden');
+}
+
+// ─── STARFIELD ANIMATION ────────────────────────────
+(function(){
+  const STAR_COUNT = 160;
+  function initStars(canvas){
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w, h, stars;
+    function resize(){ w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
+    function makeStars(){
+      stars = Array.from({length:STAR_COUNT}, () => ({
+        x: Math.random()*w, y: Math.random()*h,
+        r: Math.random()*1.3 + 0.2,
+        a: Math.random()*0.7 + 0.2,
+        speed: Math.random()*0.18 + 0.04,
+        tw: Math.random()*Math.PI*2
+      }));
+    }
+    resize(); makeStars();
+    window.addEventListener('resize', () => { resize(); makeStars(); });
+    (function draw(t){
+      ctx.clearRect(0,0,w,h);
+      for(const s of stars){
+        s.y -= s.speed; s.tw += 0.02;
+        if(s.y < -2){ s.y = h+2; s.x = Math.random()*w; }
+        const alpha = s.a * (0.55 + 0.45*Math.sin(s.tw));
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(226,238,255,${alpha})`;
+        ctx.fill();
+      }
+      // occasional shooting star
+      if(Math.random() < 0.004){
+        const sx = Math.random()*w, sy = Math.random()*h*0.5;
+        const g = ctx.createLinearGradient(sx,sy,sx+90,sy+46);
+        g.addColorStop(0,'rgba(0,212,255,0)');
+        g.addColorStop(1,'rgba(0,212,255,0.55)');
+        ctx.strokeStyle = g; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+90,sy+46); ctx.stroke();
+      }
+      requestAnimationFrame(draw);
+    })();
+  }
+  window.addEventListener('load', () => {
+    initStars(document.getElementById('starfield'));
+    initStars(document.getElementById('starfieldLogin'));
+  });
+})();
+
+// ─── LANDING TICKER (live prices, pre-login) ─────────
+(function(){
+  const LT_MARKETS = ['R_100','R_50','R_25','R_75','R_10','JD10','JD50','RDBULL','RDBEAR','1HZ100V'];
+  const ltEls = {};
+  const ltData = {};
+  function renderLandingTicker(){
+    const track = document.getElementById('landingTickerItems');
+    if(!track) return;
+    track.innerHTML = LT_MARKETS.map(sym => {
+      const d = ltData[sym];
+      const name = (MARKETS[sym]||sym).replace('Volatility ','V').replace('Jump ','J');
+      const price = d ? d.quote.toFixed(3) : '—';
+      const up = d ? (d.__prev === undefined || d.quote >= d.__prev) : true;
+      const pct = d ? ((d.quote - d.__base)/(d.__base||1)*100).toFixed(2) : '0.00';
+      const arrow = up ? '▲' : '▼';
+      return `<div class="lt-item"><span class="lt-sym">${name}</span><span class="lt-price">${price}</span><span class="lt-arrow ${up?'up':'down'}">${arrow}</span><span class="lt-pct ${up?'up':'down'}">${up?'+':''}${pct}%</span></div>`;
+    }).join('');
+  }
+  // Connect a lightweight public socket for live prices on the landing page
+  function connectLandingTicker(){
+    try{
+      const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+      ws.onopen = () => { LT_MARKETS.forEach(m => { ws.send(JSON.stringify({ticks:m,subscribe:1})); }); };
+      ws.onmessage = e => {
+        try{
+          const msg = JSON.parse(e.data);
+          if(msg.error) return;
+          if(msg.msg_type === 'tick'){
+            const t = msg.tick;
+            const d = ltData[t.symbol] || { __base: t.quote, __prev: undefined };
+            d.__prev = d.quote; d.quote = t.quote;
+            ltData[t.symbol] = d;
+            renderLandingTicker();
+          }
+        }catch{}
+      };
+      ws.onerror = () => { ws.close(); };
+      ws.onclose = () => { setTimeout(connectLandingTicker, 6000); };
+    }catch{}
+  }
+  if(document.getElementById('landingTickerItems')){
+    renderLandingTicker();
+    connectLandingTicker();
+  }
+})();
 </script>
 </body>
 </html>
