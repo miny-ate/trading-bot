@@ -810,21 +810,19 @@ body::before {
 // ════════════════════════════════════════════════════
 
 // ─── DERIV APP CONFIG ───────────────────────────────
-// Registered at https://api.deriv.com/ ("Manage applications") as
-// "Ernest trading bot". The Redirect URI on file for this app_id must
-// exactly match the URL this page is hosted at (https://, no trailing
-// slash mismatch) or the OAuth redirect will fail silently.
-// NOTE: Deriv's own app_ids are normally purely numeric (e.g. 1089,
-// 36300). The value below was copied verbatim from the "Registered Apps"
-// dashboard — if authorize calls start failing with an app_id error,
-// double-check this against the dashboard's "App ID" column again.
-// Registered Deriv OAuth application supplied by the site owner.
+// Deriv OAuth 2.0 application registered for Ernest.
+// IMPORTANT: the Redirect URI registered in developers.deriv.com must
+// exactly match DERIV_REDIRECT_URI below.
 const DERIV_APP_ID = '3430YlOKM0lPq9LGOziIJ';
+const DERIV_REDIRECT_URI = 'https://ernest.co.ke';
+const DERIV_OAUTH_SCOPE = 'trade';
 
 // ─── STATE ──────────────────────────────────────────
 const S = {
   ws: null,
   token: null,
+  tokenExpiresAt: 0,
+  accountId: null,
   account: null,
   balance: 0,
   currency: 'USD',
@@ -836,6 +834,8 @@ const S = {
   sidebarCollapsed: false,
   lightMode: false,
   isConnectingFlow: false,
+  _pingTimer: null,
+  _loggingOut: false,
 
   // Bot config
   bot: {
@@ -927,41 +927,79 @@ const STRATEGIES = [
 ];
 
 // ─── WEBSOCKET ──────────────────────────────────────
-function ws_connect(token) {
-  const server = `wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`;
-  S.ws = new WebSocket(server);
-  setConnStatus('connecting');
+async function ws_connect(token, accountId) {
+  try {
+    setConnStatus('connecting');
+    if (!accountId) throw new Error('No Deriv account ID was selected.');
 
-  S.ws.onopen = () => {
-    setConnStatus('connected');
-    ws_send({ authorize: token });
-    // Subscribe to ticks for default markets
-    ['R_100','R_50','R_25'].forEach(m => subscribeTick(m));
-    // Keep alive
-    setInterval(() => { if (S.ws && S.ws.readyState === 1) ws_send({ ping: 1 }); }, 30000);
-  };
+    // New Deriv OAuth apps use a short-lived OAuth access token. Obtain a
+    // one-time WebSocket URL for the selected Options account first.
+    const otpResponse = await fetch(
+      `https://api.derivws.com/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Deriv-App-ID': DERIV_APP_ID
+        }
+      }
+    );
 
-  S.ws.onmessage = e => {
-    try { handleMessage(JSON.parse(e.data)); } catch {}
-  };
-
-  S.ws.onclose = () => {
-    setConnStatus('disconnected');
-    if (S.connected) {
-      setTimeout(() => ws_connect(S.token), 3000);
-    } else if (S.isConnectingFlow) {
-      hideConnectingScreen();
-      document.getElementById('loginScreen').classList.remove('hidden');
-      document.getElementById('loginError').classList.remove('hidden');
-      document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
+    const otpData = await otpResponse.json();
+    if (!otpResponse.ok || !otpData?.data?.url) {
+      throw new Error(
+        otpData?.errors?.[0]?.message || 'Unable to create the authenticated Deriv WebSocket session.'
+      );
     }
-  };
 
-  S.ws.onerror = () => {
+    const server = otpData.data.url;
+    S.ws = new WebSocket(server);
+
+    S.ws.onopen = () => {
+      setConnStatus('connected');
+
+      // OTP already authenticated this WebSocket. Do NOT send the old
+      // legacy {authorize: token} message here.
+      S.connected = true;
+      markStep('socket', 'done');
+      markStep('balance', 'active');
+
+      ws_send({ balance: 1, subscribe: 1 });
+      ['R_100','R_50','R_25'].forEach(m => subscribeTick(m));
+
+      if (S._pingTimer) clearInterval(S._pingTimer);
+      S._pingTimer = setInterval(() => {
+        if (S.ws && S.ws.readyState === 1) ws_send({ ping: 1 });
+      }, 30000);
+    };
+
+    S.ws.onmessage = e => {
+      try { handleMessage(JSON.parse(e.data)); } catch {}
+    };
+
+    S.ws.onclose = () => {
+      if (S._pingTimer) { clearInterval(S._pingTimer); S._pingTimer = null; }
+      setConnStatus('disconnected');
+      S.connected = false;
+
+      // The OTP is single-use, so reconnect by requesting a fresh OTP.
+      if (S.token && S.accountId && !S._loggingOut) {
+        setTimeout(() => ws_connect(S.token, S.accountId), 3000);
+      }
+    };
+
+    S.ws.onerror = () => setConnStatus('disconnected');
+  } catch (err) {
+    console.error('Deriv connection error:', err);
+    S.connected = false;
     setConnStatus('disconnected');
-  };
+    hideConnectingScreen();
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('loginError').classList.remove('hidden');
+    document.getElementById('loginError').textContent = '⚠️ ' + (err.message || 'Deriv connection failed.');
+    document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
+  }
 }
-
 function ws_send(data) {
   if (!data.req_id) data.req_id = S.reqId++;
   if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(data));
@@ -975,13 +1013,14 @@ function handleMessage(msg) {
       document.getElementById('loginScreen').classList.remove('hidden');
       document.getElementById('loginError').classList.remove('hidden');
       document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
-      localStorage.removeItem('ernest_token');
+      S.token = null; S.accountId = null;
     } else {
       toast('⚠️ ' + (msg.error.message || 'API error'), 'warning');
     }
     return;
   }
 
+  // Legacy authorize messages are not expected on an OTP-authenticated socket.
   if (msg.msg_type === 'authorize') {
     S.account = msg.authorize;
     S.balance = msg.authorize.balance;
@@ -1005,7 +1044,8 @@ function handleMessage(msg) {
 
   if (msg.msg_type === 'balance') {
     S.balance = msg.balance.balance;
-    S.currency = msg.balance.currency;
+    S.currency = msg.balance.currency || S.currency;
+    updateSidebarUser();
     updateBalanceUI();
     if (S.isConnectingFlow) {
       markStep('balance', 'done');
@@ -2088,57 +2128,165 @@ function markStep(step, status) {
   if (fill) fill.style.width = (doneCount / CONNECT_STEPS.length * 100) + '%';
 }
 
-// ─── AUTH (Deriv OAuth2) ─────────────────────────────
-// Redirects the user to Deriv's hosted login/signup page. Deriv handles
-// the actual authentication — Ernest never sees the user's password.
-function loginWithDeriv() {
-  document.getElementById('loginBtn').innerHTML = '<span class="spinner"></span> Redirecting to Deriv…';
-  window.location.href = `https://oauth.deriv.com/oauth2/authorize?app_id=${DERIV_APP_ID}`;
+// ─── AUTH (Deriv OAuth 2.0 + PKCE) ───────────────────
+// Current Deriv OAuth apps use Authorization Code + PKCE. The browser
+// never receives an account token in the URL. It receives a short-lived
+// authorization code, which is exchanged by the same-origin Vercel
+// serverless function at /api/oauth/token.
+
+function base64Url(bytes) {
+  let binary = '';
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-// After a successful login, Deriv redirects back to this page's URL with
-// query params like ?acct1=CR123&token1=a1-xxxx&cur1=usd&acct2=VRTC456&token2=a1-yyyy&cur2=usd
-// (one triplet per account the user has — real and/or demo).
-function parseDerivOAuthCallback() {
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has('acct1')) return false;
+function randomString(length = 64) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+}
 
-  const accounts = [];
-  let i = 1;
-  while (params.has('acct' + i)) {
-    accounts.push({
-      loginid: params.get('acct' + i),
-      token: params.get('token' + i),
-      currency: (params.get('cur' + i) || '').toUpperCase(),
-    });
-    i++;
+async function makeCodeChallenge(verifier) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64Url(new Uint8Array(hash));
+}
+
+async function loginWithDeriv() {
+  const btn = document.getElementById('loginBtn');
+  if (btn) btn.innerHTML = '<span class="spinner"></span> Redirecting to Deriv…';
+
+  try {
+    const verifier = randomString(64);
+    const challenge = await makeCodeChallenge(verifier);
+    const state = randomString(32);
+
+    sessionStorage.setItem('deriv_pkce_verifier', verifier);
+    sessionStorage.setItem('deriv_oauth_state', state);
+
+    const authUrl = new URL('https://auth.deriv.com/oauth2/auth');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', DERIV_APP_ID);
+    authUrl.searchParams.set('redirect_uri', DERIV_REDIRECT_URI);
+    authUrl.searchParams.set('scope', DERIV_OAUTH_SCOPE);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('code_challenge', challenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+
+    window.location.assign(authUrl.toString());
+  } catch (err) {
+    console.error(err);
+    if (btn) btn.innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
+    toast('Unable to start Deriv login.', 'warning');
   }
-  // Clean the token(s) out of the URL immediately so they aren't left
-  // sitting in browser history / visible in the address bar.
+}
+
+async function parseDerivOAuthCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const returnedState = params.get('state');
+  const oauthError = params.get('error');
+
+  if (oauthError) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    const desc = params.get('error_description') || 'Deriv authorization was not completed.';
+    const el = document.getElementById('loginError');
+    if (el) { el.textContent = '⚠️ ' + desc; el.classList.remove('hidden'); }
+    return true;
+  }
+
+  if (!code) return false;
+
+  const savedState = sessionStorage.getItem('deriv_oauth_state');
+  const verifier = sessionStorage.getItem('deriv_pkce_verifier');
+
+  // Remove code/state from the visible URL immediately.
   window.history.replaceState({}, document.title, window.location.pathname);
 
-  if (accounts.length === 0) return false;
+  if (!savedState || !returnedState || returnedState !== savedState) {
+    throw new Error('OAuth state validation failed. Please start login again.');
+  }
+  if (!verifier) {
+    throw new Error('OAuth session expired. Please start login again.');
+  }
+
+  sessionStorage.removeItem('deriv_oauth_state');
+  sessionStorage.removeItem('deriv_pkce_verifier');
+
+  showConnectingScreen();
+  markStep('verify', 'active');
+
+  const response = await fetch('/api/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      code_verifier: verifier,
+      redirect_uri: DERIV_REDIRECT_URI,
+      client_id: DERIV_APP_ID
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new Error(data.error || 'Deriv token exchange failed.');
+  }
+
+  S.token = data.access_token;
+  S.tokenExpiresAt = Date.now() + ((Number(data.expires_in) || 3600) * 1000);
+
+  markStep('verify', 'done');
+  markStep('accounts', 'active');
+
+  await loadOAuthAccounts();
+  return true;
+}
+
+async function loadOAuthAccounts() {
+  const response = await fetch('https://api.derivws.com/trading/v1/options/accounts', {
+    headers: {
+      'Authorization': `Bearer ${S.token}`,
+      'Deriv-App-ID': DERIV_APP_ID
+    }
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.errors?.[0]?.message || 'Unable to load your Deriv trading accounts.');
+  }
+
+  const raw = Array.isArray(data?.data) ? data.data : [];
+  const accounts = raw.map(a => ({
+    ...a,
+    accountId: a.account_id || a.id || a.loginid || a.login_id,
+    loginid: a.loginid || a.login_id || a.account_id || a.id,
+    currency: (a.currency || 'USD').toUpperCase(),
+    isDemo: a.is_virtual === 1 || a.is_virtual === true || a.account_type === 'demo' || String(a.loginid || '').startsWith('VR')
+  })).filter(a => a.accountId);
+
+  if (!accounts.length) {
+    throw new Error('No Options trading account was returned by Deriv.');
+  }
+
+  markStep('accounts', 'done');
+
   if (accounts.length === 1) {
     finishOAuthLogin(accounts[0]);
   } else {
     showAccountPicker(accounts);
   }
-  return true;
 }
 
 function finishOAuthLogin(account) {
-  S.token = account.token;
-  showConnectingScreen();
-  markStep('verify', 'active');
-  setTimeout(() => {
-    markStep('verify', 'done');
-    markStep('accounts', 'active');
-    setTimeout(() => {
-      markStep('accounts', 'done');
-      markStep('socket', 'active');
-      ws_connect(account.token);
-    }, 300);
-  }, 280);
+  S.account = account;
+  S.accountId = account.accountId;
+  S.loginId = account.loginid || account.accountId;
+  S.currency = account.currency || 'USD';
+  S.isDemo = !!account.isDemo;
+  S.balance = Number(account.balance || 0);
+
+  document.getElementById('modalContainer').innerHTML = '';
+  markStep('socket', 'active');
+  ws_connect(S.token, S.accountId);
 }
 
 function showAccountPicker(accounts) {
@@ -2148,14 +2296,14 @@ function showAccountPicker(accounts) {
     <div class="modal">
       <div class="modal-header"><span class="modal-title">Select Deriv Account</span></div>
       <div class="modal-body">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Your Deriv login has more than one account. Choose which one Ernest should trade with.</p>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Your Deriv login has more than one Options account. Choose which one Ernest should trade with.</p>
         ${accounts.map((a,idx)=>`<div class="card card-sm" style="margin-bottom:8px;cursor:pointer" onclick="selectOAuthAccount(${idx})">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
               <div style="font-weight:700;font-size:13px;font-family:var(--mono)">${a.loginid}</div>
               <div style="font-size:11px;color:var(--text3)">${a.currency}</div>
             </div>
-            <span class="badge badge-${a.loginid.startsWith('VR')?'gold':'green'}">${a.loginid.startsWith('VR')?'DEMO':'REAL'}</span>
+            <span class="badge badge-${a.isDemo?'gold':'green'}">${a.isDemo?'DEMO':'REAL'}</span>
           </div>
         </div>`).join('')}
       </div>
@@ -2171,22 +2319,27 @@ function selectOAuthAccount(idx) {
 }
 
 function logout() {
+  S._loggingOut = true;
   if (S.running) stopBot();
   if (S.ws) { S.connected = false; S.ws.close(); S.ws = null; }
-  S.account = null; S.balance = 0;
+  S.account = null; S.accountId = null; S.token = null; S.balance = 0;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('landingPage').classList.add('hidden');
   hideConnectingScreen();
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
-  localStorage.removeItem('ernest_token');
+  S._loggingOut = true;
+  S.token = null;
+  S.accountId = null;
+  S.account = null;
+  try { sessionStorage.removeItem('deriv_access_token'); } catch {}
 }
+
 function showApp() {
   document.getElementById('landingPage').classList.add('hidden');
   document.getElementById('loginScreen').classList.add('hidden');
   hideConnectingScreen();
   document.getElementById('app').classList.remove('hidden');
-  if (S.token) localStorage.setItem('ernest_token', S.token);
 }
 
 // ─── UI STATE ────────────────────────────────────────
@@ -2226,31 +2379,27 @@ function toggleTheme(){
 // ─── BOOT ────────────────────────────────────────────
 loadSettings();
 
-// Capture OAuth / saved-session state BEFORE anything mutates location.search,
-// so the splash screen below can make an accurate "skip the intro" decision.
-const __hadOAuthCallback = (window.location.search || '').includes('acct1=');
-const __hadSavedToken = (function(){ try { return !!localStorage.getItem('ernest_token'); } catch(e){ return false; } })();
+// Current Deriv OAuth callback is ?code=...&state=... .
+// Do not use the old acct1/token1 callback format here.
+const __hadOAuthCallback = (window.location.search || '').includes('code=');
 
-// 1. If we just got redirected back from Deriv's OAuth screen, handle that first.
-// 2. Otherwise, fall back to a previously saved session token (silent reconnect),
-//    also going through the same "Connecting your account" step UI.
-if (!parseDerivOAuthCallback()) {
-  const savedToken = localStorage.getItem('ernest_token');
-  if (savedToken) {
-    S.token = savedToken;
-    showConnectingScreen();
-    markStep('verify', 'active');
-    setTimeout(() => {
-      markStep('verify', 'done');
-      markStep('accounts', 'done');
-      markStep('socket', 'active');
-      ws_connect(savedToken);
-    }, 250);
+(async function bootOAuth() {
+  try {
+    const handled = await parseDerivOAuthCallback();
+    if (!handled) {
+      // OAuth access tokens are intentionally kept in memory only. They are
+      // short-lived; a page reload starts a fresh OAuth flow.
+    }
+  } catch (err) {
+    console.error('OAuth boot error:', err);
+    hideConnectingScreen();
+    document.getElementById('loginScreen').classList.remove('hidden');
+    const errorEl = document.getElementById('loginError');
+    errorEl.classList.remove('hidden');
+    errorEl.textContent = '⚠️ ' + (err.message || 'Deriv login failed.');
+    document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
   }
-}
-// (When parseDerivOAuthCallback() returns true, finishOAuthLogin() — either
-// called directly or via the account picker — already triggers the
-// connecting screen, so no extra handling is needed here.)
+})();
 
 // Mobile menu button visibility
 window.addEventListener('resize',()=>{
