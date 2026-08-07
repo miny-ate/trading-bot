@@ -575,6 +575,25 @@ body::before {
 .login-screen{overflow:hidden}
 .login-screen canvas{position:absolute;inset:0;z-index:0;pointer-events:none}
 .login-screen .login-box{position:relative;z-index:1}
+
+/* ─── CONNECTING SCREEN (post-OAuth step UI) ─── */
+.connecting-screen{position:fixed;inset:0;z-index:600;background:radial-gradient(ellipse at 50% 30%,#0a1e3d 0%,var(--bg) 65%);display:flex;align-items:center;justify-content:center;padding:16px;transition:opacity .3s ease,visibility .3s}
+.connecting-screen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.connecting-card{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:36px 32px;width:100%;max-width:380px;text-align:center;box-shadow:0 32px 80px rgba(0,0,0,.6),0 0 40px var(--cyan-glow);position:relative;overflow:hidden}
+.connecting-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--border)}
+.connecting-progress{position:absolute;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--cyan),#0080ff);border-radius:0 3px 3px 0;width:0;transition:width .4s ease;z-index:1}
+.connecting-icon{width:56px;height:56px;border-radius:16px;background:var(--cyan-dim);border:1px solid rgba(0,212,255,.3);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 18px;animation:spin 2.4s linear infinite}
+.connecting-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:5px}
+.connecting-sub{font-size:12px;color:var(--text2);margin-bottom:24px}
+.connecting-steps{display:flex;flex-direction:column;gap:14px;text-align:left}
+.c-step{display:flex;align-items:center;gap:11px;font-size:13px;color:var(--text3);transition:.25s}
+.c-step.active,.c-step.done{color:var(--text)}
+.c-step.active{font-weight:700}
+.c-step-icon{width:22px;height:22px;min-width:22px;border-radius:50%;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;transition:.25s;color:transparent}
+.c-step.pending .c-step-icon{border-color:var(--border2);background:transparent}
+.c-step.active .c-step-icon{border-color:var(--cyan);background:var(--cyan-dim)}
+.c-step.done .c-step-icon{border-color:var(--green);background:var(--green);color:#001a10}
+.c-spinner{width:11px;height:11px;border:1.5px solid rgba(0,212,255,.25);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 </style>
 <body>
 
@@ -689,6 +708,23 @@ body::before {
     </div>
   </div>
 </div>
+
+<!-- CONNECTING SCREEN (shown after OAuth redirect / silent reconnect) -->
+<div class="connecting-screen hidden" id="connectingScreen">
+  <div class="connecting-card">
+    <div class="connecting-progress" id="connectingProgressFill"></div>
+    <div class="connecting-icon">⚡</div>
+    <div class="connecting-title">Connecting your account</div>
+    <div class="connecting-sub">Opening a secure WebSocket session…</div>
+    <div class="connecting-steps">
+      <div class="c-step pending" data-step="verify"><span class="c-step-icon"></span><span>Verifying your login</span></div>
+      <div class="c-step pending" data-step="accounts"><span class="c-step-icon"></span><span>Loading your accounts</span></div>
+      <div class="c-step pending" data-step="socket"><span class="c-step-icon"></span><span>Establishing secure connection</span></div>
+      <div class="c-step pending" data-step="balance"><span class="c-step-icon"></span><span>Syncing your balance</span></div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
@@ -774,15 +810,15 @@ body::before {
 // ════════════════════════════════════════════════════
 
 // ─── DERIV APP CONFIG ───────────────────────────────
-// You MUST register your own application at https://api.deriv.com/
-// ("Manage applications" -> "Register application"), then:
-//   1. Set the app's "Redirect URI" to the exact URL where this page is
-//      hosted (must be https:// and publicly reachable — OAuth will not
-//      work on localhost, file://, or a URL that doesn't match exactly).
-//   2. Copy the numeric app_id it gives you and paste it below.
-// Deriv app_ids are ALWAYS numeric (e.g. 1089, 36300, 65687...). A
-// non-numeric value here will make every authorize/oauth call fail.
-const DERIV_APP_ID = '1089'; // TODO: replace with your own registered numeric app_id
+// Registered at https://api.deriv.com/ ("Manage applications") as
+// "Ernest trading bot". The Redirect URI on file for this app_id must
+// exactly match the URL this page is hosted at (https://, no trailing
+// slash mismatch) or the OAuth redirect will fail silently.
+// NOTE: Deriv's own app_ids are normally purely numeric (e.g. 1089,
+// 36300). The value below was copied verbatim from the "Registered Apps"
+// dashboard — if authorize calls start failing with an app_id error,
+// double-check this against the dashboard's "App ID" column again.
+const DERIV_APP_ID = '3430YlOKM0lPq9LGOziIJ';
 
 // ─── STATE ──────────────────────────────────────────
 const S = {
@@ -798,6 +834,7 @@ const S = {
   activePage: 'dashboard',
   sidebarCollapsed: false,
   lightMode: false,
+  isConnectingFlow: false,
 
   // Bot config
   bot: {
@@ -911,6 +948,11 @@ function ws_connect(token) {
     setConnStatus('disconnected');
     if (S.connected) {
       setTimeout(() => ws_connect(S.token), 3000);
+    } else if (S.isConnectingFlow) {
+      hideConnectingScreen();
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('loginError').classList.remove('hidden');
+      document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
     }
   };
 
@@ -928,13 +970,11 @@ function ws_send(data) {
 function handleMessage(msg) {
   if (msg.error) {
     if (msg.error.code === 'InvalidToken') {
-      if (document.getElementById('loginScreen') && !document.getElementById('loginScreen').classList.contains('hidden')) {
-        document.getElementById('loginError').classList.remove('hidden');
-        document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
-        localStorage.removeItem('ernest_token');
-      } else {
-        toast('⚠️ Auth error: ' + msg.error.message, 'warning');
-      }
+      hideConnectingScreen();
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('loginError').classList.remove('hidden');
+      document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
+      localStorage.removeItem('ernest_token');
     } else {
       toast('⚠️ ' + (msg.error.message || 'API error'), 'warning');
     }
@@ -950,9 +990,14 @@ function handleMessage(msg) {
     S.connected = true;
     updateBalanceUI();
     updateSidebarUser();
-    showApp();
-    navigateTo('dashboard');
-    toast('✅ Connected as ' + S.loginId, 'success');
+    if (S.isConnectingFlow) {
+      markStep('socket', 'done');
+      markStep('balance', 'active');
+    } else {
+      showApp();
+      navigateTo('dashboard');
+      toast('✅ Connected as ' + S.loginId, 'success');
+    }
     // Subscribe to balance updates
     ws_send({ balance: 1, subscribe: 1 });
   }
@@ -961,6 +1006,15 @@ function handleMessage(msg) {
     S.balance = msg.balance.balance;
     S.currency = msg.balance.currency;
     updateBalanceUI();
+    if (S.isConnectingFlow) {
+      markStep('balance', 'done');
+      setTimeout(() => {
+        hideConnectingScreen();
+        showApp();
+        navigateTo('dashboard');
+        toast('✅ Connected as ' + S.loginId, 'success');
+      }, 350);
+    }
   }
 
   if (msg.msg_type === 'tick') {
@@ -2001,6 +2055,38 @@ function loadSettings() {
   } catch {}
 }
 
+// ─── CONNECTING SCREEN (post-OAuth step UI) ─────────
+// Mirrors the "Verifying your login → Loading your accounts →
+// Establishing secure connection → Syncing your balance" flow.
+const CONNECT_STEPS = ['verify','accounts','socket','balance'];
+function showConnectingScreen() {
+  S.isConnectingFlow = true;
+  const el = document.getElementById('connectingScreen');
+  if (el) el.classList.remove('hidden');
+  CONNECT_STEPS.forEach(s => markStep(s, 'pending'));
+  const fill = document.getElementById('connectingProgressFill');
+  if (fill) fill.style.width = '0%';
+}
+function hideConnectingScreen() {
+  S.isConnectingFlow = false;
+  const el = document.getElementById('connectingScreen');
+  if (el) el.classList.add('hidden');
+}
+function markStep(step, status) {
+  const el = document.querySelector(`.c-step[data-step="${step}"]`);
+  if (!el) return;
+  el.classList.remove('done', 'active', 'pending');
+  el.classList.add(status);
+  const icon = el.querySelector('.c-step-icon');
+  if (icon) icon.innerHTML = status === 'done' ? '✓' : (status === 'active' ? '<span class="c-spinner"></span>' : '');
+  const doneCount = CONNECT_STEPS.filter(s => {
+    const stepEl = document.querySelector(`.c-step[data-step="${s}"]`);
+    return stepEl && stepEl.classList.contains('done');
+  }).length;
+  const fill = document.getElementById('connectingProgressFill');
+  if (fill) fill.style.width = (doneCount / CONNECT_STEPS.length * 100) + '%';
+}
+
 // ─── AUTH (Deriv OAuth2) ─────────────────────────────
 // Redirects the user to Deriv's hosted login/signup page. Deriv handles
 // the actual authentication — Ernest never sees the user's password.
@@ -2041,9 +2127,17 @@ function parseDerivOAuthCallback() {
 
 function finishOAuthLogin(account) {
   S.token = account.token;
-  const btn = document.getElementById('loginBtn');
-  if (btn) btn.innerHTML = '<span class="spinner"></span> Connecting…';
-  ws_connect(account.token);
+  showConnectingScreen();
+  markStep('verify', 'active');
+  setTimeout(() => {
+    markStep('verify', 'done');
+    markStep('accounts', 'active');
+    setTimeout(() => {
+      markStep('accounts', 'done');
+      markStep('socket', 'active');
+      ws_connect(account.token);
+    }, 300);
+  }, 280);
 }
 
 function showAccountPicker(accounts) {
@@ -2081,6 +2175,7 @@ function logout() {
   S.account = null; S.balance = 0;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('landingPage').classList.add('hidden');
+  hideConnectingScreen();
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('loginBtn').innerHTML = '<span>⚡ Login / Sign up with Deriv</span>';
   localStorage.removeItem('ernest_token');
@@ -2088,6 +2183,7 @@ function logout() {
 function showApp() {
   document.getElementById('landingPage').classList.add('hidden');
   document.getElementById('loginScreen').classList.add('hidden');
+  hideConnectingScreen();
   document.getElementById('app').classList.remove('hidden');
   if (S.token) localStorage.setItem('ernest_token', S.token);
 }
@@ -2135,20 +2231,25 @@ const __hadOAuthCallback = (window.location.search || '').includes('acct1=');
 const __hadSavedToken = (function(){ try { return !!localStorage.getItem('ernest_token'); } catch(e){ return false; } })();
 
 // 1. If we just got redirected back from Deriv's OAuth screen, handle that first.
-// 2. Otherwise, fall back to a previously saved session token (silent reconnect).
+// 2. Otherwise, fall back to a previously saved session token (silent reconnect),
+//    also going through the same "Connecting your account" step UI.
 if (!parseDerivOAuthCallback()) {
   const savedToken = localStorage.getItem('ernest_token');
   if (savedToken) {
     S.token = savedToken;
-    document.getElementById('loginScreen').classList.remove('hidden');
-    document.getElementById('loginBtn').innerHTML = '<span class="spinner"></span> Reconnecting…';
-    ws_connect(savedToken);
+    showConnectingScreen();
+    markStep('verify', 'active');
+    setTimeout(() => {
+      markStep('verify', 'done');
+      markStep('accounts', 'done');
+      markStep('socket', 'active');
+      ws_connect(savedToken);
+    }, 250);
   }
-} else {
-  // We're mid-OAuth-login: keep the login screen visible (behind the splash)
-  // showing the "Connecting…" state set by finishOAuthLogin().
-  document.getElementById('loginScreen').classList.remove('hidden');
 }
+// (When parseDerivOAuthCallback() returns true, finishOAuthLogin() — either
+// called directly or via the account picker — already triggers the
+// connecting screen, so no extra handling is needed here.)
 
 // Mobile menu button visibility
 window.addEventListener('resize',()=>{
