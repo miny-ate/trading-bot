@@ -594,6 +594,13 @@ body::before {
 .c-step.active .c-step-icon{border-color:var(--cyan);background:var(--cyan-dim)}
 .c-step.done .c-step-icon{border-color:var(--green);background:var(--green);color:#001a10}
 .c-spinner{width:11px;height:11px;border:1.5px solid rgba(0,212,255,.25);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+/* ─── FREE BOTS (light card grid, matches blueman screenshot) ─── */
+.freebots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.freebot-card{background:#f4f6fa;border:1px solid #e2e6ee;border-radius:10px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;min-height:120px}
+.freebot-card .fb-name{font-size:14px;font-weight:700;color:#1b2233;line-height:1.4;margin-bottom:14px}
+.freebot-card .fb-load{display:block;width:100%;text-align:center;background:#1b3fe0;color:#fff;padding:10px 0;border-radius:6px;font-weight:700;font-size:13px;border:none;cursor:pointer;transition:.15s}
+.freebot-card .fb-load:hover{background:#1533b8}
 </style>
 <body>
 
@@ -1956,6 +1963,347 @@ function risefallFire(which) {
   firePanelTrade('risefall', { market: S.autotrader.market, contractType: which==='rise'?'CALL':'PUT', ticks: st.ticks, stake: st.currentStake, baseStake: st.stake, useMartingale: true, mult: st.mult });
 }
 
+// ─── BOT BUILDER (scoped visual trade builder) ───────
+// Not a full Blockly clone — a focused config-driven builder that lets
+// you define trade parameters + restart rules and run them live using
+// the same panel trading engine as Speedbot/Auto Trader.
+function renderBotBuilder() {
+  const bb = S.botbuilder;
+  const showBarrier = bb.contractType === 'DIGITOVER' || bb.contractType === 'DIGITUNDER' || bb.contractType === 'DIGITMATCH' || bb.contractType === 'DIGITDIFF';
+  return `
+  <div class="alert alert-info">🧩 Define trade parameters below, then Run. This is a focused visual builder (not a full block-programming editor) — it drives the same live trading engine as Speedbot.</div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-icon">🔢</div><div class="stat-val">${bb.tradesRun}</div><div class="stat-label">Trades Run</div></div>
+    <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-val">${fmtBal(bb.currentStake)}</div><div class="stat-label">Next Stake</div></div>
+    <div class="stat-card"><div class="stat-icon">${bb.running?'🟢':'⚪'}</div><div class="stat-val">${bb.running?'RUNNING':'STOPPED'}</div><div class="stat-label">Status</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">1. Trade Parameters</div></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Market</label>
+          <select class="form-control" onchange="S.botbuilder.market=this.value">
+            ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${bb.market===k?' selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Contract Type</label>
+          <select class="form-control" onchange="S.botbuilder.contractType=this.value;renderPage('botbuilder')">
+            <option value="DIGITEVEN"${bb.contractType==='DIGITEVEN'?' selected':''}>Digits — Even</option>
+            <option value="DIGITODD"${bb.contractType==='DIGITODD'?' selected':''}>Digits — Odd</option>
+            <option value="DIGITOVER"${bb.contractType==='DIGITOVER'?' selected':''}>Digits — Over</option>
+            <option value="DIGITUNDER"${bb.contractType==='DIGITUNDER'?' selected':''}>Digits — Under</option>
+            <option value="DIGITMATCH"${bb.contractType==='DIGITMATCH'?' selected':''}>Digits — Matches</option>
+            <option value="DIGITDIFF"${bb.contractType==='DIGITDIFF'?' selected':''}>Digits — Differs</option>
+            <option value="CALL"${bb.contractType==='CALL'?' selected':''}>Rise</option>
+            <option value="PUT"${bb.contractType==='PUT'?' selected':''}>Fall</option>
+          </select>
+        </div>
+      </div>
+      ${showBarrier?`<div class="form-group"><label class="form-label">Barrier Digit (0–9)</label><input type="number" class="form-control" min="0" max="9" value="${bb.barrier}" onchange="S.botbuilder.barrier=Math.max(0,Math.min(9,parseInt(this.value)||0))"/></div>`:''}
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${bb.ticks}" onchange="S.botbuilder.ticks=parseInt(this.value)||1"/></div>
+        <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${bb.stake}" onchange="S.botbuilder.stake=parseFloat(this.value)||0.5;S.botbuilder.currentStake=S.botbuilder.stake"/></div>
+      </div>
+      <div class="divider"></div>
+      <div class="card-title" style="margin-bottom:10px">2. Restart Conditions</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label class="toggle"><input type="checkbox" ${bb.useMartingale?'checked':''} onchange="S.botbuilder.useMartingale=this.checked;renderPage('botbuilder')"><span class="toggle-slider"></span></label>
+        <span style="font-size:13px;color:var(--text2)">Martingale on loss</span>
+      </div>
+      ${bb.useMartingale?`<div class="form-group"><label class="form-label">Multiplier</label><input type="number" class="form-control" step="0.01" min="1" value="${bb.mult}" onchange="S.botbuilder.mult=parseFloat(this.value)||2"/></div>`:''}
+      <div style="display:flex;align-items:center;gap:10px;margin:10px 0">
+        <label class="toggle"><input type="checkbox" ${bb.restartOnLoss?'checked':''} onchange="S.botbuilder.restartOnLoss=this.checked"><span class="toggle-slider"></span></label>
+        <span style="font-size:13px;color:var(--text2)">Keep running after a loss</span>
+      </div>
+      <div class="form-group"><label class="form-label">Stop after N trades</label><input type="number" class="form-control" min="1" value="${bb.maxTrades}" onchange="S.botbuilder.maxTrades=parseInt(this.value)||20"/></div>
+      <div class="divider"></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="botBuilderRunOnce()">Run Once</button>
+        <button class="btn ${bb.running?'btn-danger':'btn-success'}" style="flex:1;justify-content:center" onclick="botBuilderToggleStart()">${bb.running?'⏹ Stop':'▶ Start'}</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 Run Log</div></div>
+      ${bb.log.length===0?`<div style="text-align:center;padding:30px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">🧩</div><p>No runs yet</p></div>`
+      :`<div style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto">${bb.log.map(l=>`<div style="font-size:12px;font-family:var(--mono);padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">${l}</div>`).join('')}</div>`}
+    </div>
+  </div>`;
+}
+function botBuilderBuildContractType() {
+  const t = S.botbuilder.contractType;
+  if (t==='DIGITOVER'||t==='DIGITUNDER'||t==='DIGITMATCH'||t==='DIGITDIFF') return { contractType:t, barrier:S.botbuilder.barrier };
+  return { contractType:t, barrier:undefined };
+}
+function botBuilderRunOnce() {
+  const { contractType, barrier } = botBuilderBuildContractType();
+  firePanelTrade('botbuilder', {
+    market: S.botbuilder.market, contractType, barrier,
+    ticks: S.botbuilder.ticks, stake: S.botbuilder.currentStake, baseStake: S.botbuilder.stake,
+    useMartingale: S.botbuilder.useMartingale, mult: S.botbuilder.mult,
+  });
+}
+function botBuilderToggleStart() {
+  S.botbuilder.running = !S.botbuilder.running;
+  if (S.botbuilder.running) { S.botbuilder.currentStake = S.botbuilder.stake; S.botbuilder.tradesRun = 0; botBuilderRunOnce(); }
+  else renderPage('botbuilder');
+}
+function loadFreeBotIntoBuilder(idx) {
+  const preset = FREE_BOTS[idx]; if (!preset) return;
+  S.botbuilder.market = preset.market;
+  S.botbuilder.contractType = preset.contractType;
+  S.botbuilder.barrier = preset.barrier ?? 5;
+  S.botbuilder.ticks = preset.ticks;
+  S.botbuilder.stake = preset.stake;
+  S.botbuilder.currentStake = preset.stake;
+  S.botbuilder.useMartingale = preset.useMartingale;
+  S.botbuilder.mult = preset.mult;
+  S.botbuilder.restartOnLoss = preset.restartOnLoss;
+  navigateTo('botbuilder');
+  toast('Loaded: ' + preset.name, 'success');
+}
+
+// ─── FREE BOTS (preset library) ──────────────────────
+const FREE_BOTS = [
+  { name:'Even/Odd Starter', desc:'Simple even/odd with light martingale.', market:'R_100', contractType:'DIGITEVEN', ticks:1, stake:0.5, useMartingale:true, mult:2, restartOnLoss:true },
+  { name:'Over 3 Recovery Bot', desc:'Digit Over 3 with recovery multiplier.', market:'R_50', contractType:'DIGITOVER', barrier:3, ticks:1, stake:0.5, useMartingale:true, mult:1.8, restartOnLoss:true },
+  { name:'Under 6 Recovery Bot', desc:'Digit Under 6 with recovery multiplier.', market:'R_50', contractType:'DIGITUNDER', barrier:6, ticks:1, stake:0.5, useMartingale:true, mult:1.8, restartOnLoss:true },
+  { name:'Digit Switcher', desc:'Alternates around digit 5 — Over/Under mix.', market:'R_25', contractType:'DIGITOVER', barrier:5, ticks:1, stake:0.35, useMartingale:false, mult:1, restartOnLoss:true },
+  { name:'Speed Match Bot', desc:'Fast Matches bot on digit 8, flat stake.', market:'R_10', contractType:'DIGITMATCH', barrier:8, ticks:1, stake:0.35, useMartingale:false, mult:1, restartOnLoss:true },
+  { name:'Rise/Fall Trend Bot', desc:'Simple Rise/Fall with martingale recovery.', market:'R_100', contractType:'CALL', ticks:5, stake:1, useMartingale:true, mult:2, restartOnLoss:true },
+  { name:'Over 1 Bot', desc:'Digit Over 1 — high win-rate, low payout.', market:'R_75', contractType:'DIGITOVER', barrier:1, ticks:1, stake:0.5, useMartingale:false, mult:1, restartOnLoss:true },
+  { name:'Under 8 Bot', desc:'Digit Under 8 — high win-rate, low payout.', market:'R_75', contractType:'DIGITUNDER', barrier:8, ticks:1, stake:0.5, useMartingale:false, mult:1, restartOnLoss:true },
+  { name:'Odd Hunter', desc:'Odd digits only, moderate martingale.', market:'R_25', contractType:'DIGITODD', ticks:1, stake:0.5, useMartingale:true, mult:1.9, restartOnLoss:true },
+  { name:'Differ Bot', desc:'Digit Differs on 4 — flat stake, no recovery.', market:'R_10', contractType:'DIGITDIFF', barrier:4, ticks:1, stake:0.35, useMartingale:false, mult:1, restartOnLoss:true },
+  { name:'Conservative Even', desc:'Even digits, very light martingale, stops on loss.', market:'R_100', contractType:'DIGITEVEN', ticks:1, stake:0.5, useMartingale:true, mult:1.3, restartOnLoss:false },
+  { name:'Fall Hunter', desc:'Fall-only bot with martingale recovery.', market:'R_50', contractType:'PUT', ticks:5, stake:1, useMartingale:true, mult:2.2, restartOnLoss:true },
+];
+function renderFreeBots() {
+  return `
+  <div class="alert alert-info" style="margin-bottom:16px">🎁 Load any preset into the Bot Builder, review the settings, then hit Start. These are starter configurations — tune stake and martingale to your own risk tolerance before running live.</div>
+  <div class="freebots-grid">
+    ${FREE_BOTS.map((b,i)=>`<div class="freebot-card">
+      <div class="fb-name">${i+1}. ${b.name}<div style="font-weight:400;font-size:11px;color:#5b6478;margin-top:6px">${b.desc}</div></div>
+      <button class="fb-load" onclick="loadFreeBotIntoBuilder(${i})">Load Bot</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+// ─── ANALYSIS TOOLS ───────────────────────────────────
+function renderAnalysisTools() {
+  const at = S.analysisTools;
+  const r = at.result;
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><div class="card-title">🔢 Digit Analysis</div></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Synthetic Market</label>
+        <select class="form-control" onchange="S.analysisTools.market=this.value">
+          ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${at.market===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Number of Ticks</label><input type="number" class="form-control" min="20" max="5000" value="${at.ticks}" onchange="S.analysisTools.ticks=parseInt(this.value)||120"/></div>
+    </div>
+    <button class="btn btn-primary" onclick="fetchDigitStats('analysistools', S.analysisTools.market, S.analysisTools.ticks)" ${at.loading?'disabled':''}>${at.loading?'<span class="spinner"></span> Analyzing…':'▶ Run Analysis'}</button>
+  </div>
+  ${!r?`<div class="card"><div style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">🔢</div><p>Run an analysis to see digit distribution.</p></div></div>`
+  :`
+  <div class="card" style="margin-bottom:14px;text-align:center">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Last Price</div>
+    <div style="font-size:28px;font-weight:700;font-family:var(--mono);color:var(--cyan)">${r.lastPrice}</div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><div class="card-title">Last Digit Distribution</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:14px">
+      ${r.pct.map((p,d)=>`<div style="width:60px;height:60px;border-radius:50%;border:2px solid ${d===r.mostDigit?'var(--green)':(d===r.leastDigit?'var(--red)':'var(--border)')};display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:16px;font-weight:700">${d}</div>
+        <div style="font-size:10px;color:var(--text3)">${p.toFixed(1)}%</div>
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center">
+      ${r.sequence.map(d=>`<span class="badge ${d%2===0?'badge-cyan':'badge-gold'}">${d}</span>`).join('')}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Even / Odd Split</div></div>
+    <div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>Even</span><span>${r.evenPct.toFixed(1)}%</span></div><div class="progress-bar"><div class="progress-fill" style="width:${r.evenPct}%;background:var(--green)"></div></div></div>
+    <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>Odd</span><span>${r.oddPct.toFixed(1)}%</span></div><div class="progress-bar"><div class="progress-fill" style="width:${r.oddPct}%;background:var(--red)"></div></div></div>
+  </div>`}`;
+}
+
+// ─── D-TRADER ─────────────────────────────────────────
+function renderDTrader() {
+  const dt = S.dtrader;
+  const c = dt.contractInfo;
+  return `
+  <div class="grid-65">
+    <div>
+      <div class="card" style="margin-bottom:10px">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Market</label>
+            <select class="form-control" onchange="S.dtrader.market=this.value;subscribeTick(this.value)">
+              ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${dt.market===k?' selected':''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label">Mode</label>
+            <select class="form-control" onchange="S.dtrader.mode=this.value;renderPage('dtrader')">
+              <option value="accu"${dt.mode==='accu'?' selected':''}>Accumulators</option>
+              <option value="callput"${dt.mode==='callput'?' selected':''}>Rise/Fall</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="chart-area" style="padding:8px">
+        <canvas id="dtraderChart" class="chart-canvas" height="320"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">${dt.mode==='accu'?'📈 Accumulators':'📊 Rise/Fall'}</div></div>
+      ${dt.mode==='accu'?`
+        <div class="form-group"><label class="form-label">Growth Rate</label>
+          <div style="display:flex;gap:6px">
+            ${[1,2,3,4,5].map(r=>`<button class="btn ${dt.growthRate===r?'btn-primary':'btn-secondary'} btn-sm" style="flex:1;justify-content:center" onclick="S.dtrader.growthRate=${r};renderPage('dtrader')">${r}%</button>`).join('')}
+          </div>
+        </div>
+      `:`
+        <div class="form-group"><label class="form-label">Duration (ticks)</label><input type="number" class="form-control" min="1" value="${dt.ticks}" onchange="S.dtrader.ticks=parseInt(this.value)||5"/></div>
+      `}
+      <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${dt.stake}" onchange="S.dtrader.stake=parseFloat(this.value)||1"/></div>
+      ${c?`<div class="card-sm" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin:12px 0">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--text2)">Open Contract</span><span class="badge badge-cyan">#${dt.contractId}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700"><span>Profit</span><span style="color:${parseFloat(c.profit)>=0?'var(--green)':'var(--red)'}">${fmt(c.profit)}</span></div>
+      </div>
+      <button class="btn btn-danger" style="width:100%;justify-content:center" onclick="sellDTraderContract()">Sell / Close Now</button>`
+      :`<button class="btn btn-success" style="width:100%;justify-content:center" onclick="dtraderBuy()">${dt.mode==='accu'?'Buy Accumulator':'Buy Rise/Fall'}</button>
+      <div class="divider"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="S.dtrader.mode='callput';S.dtrader.contractType='CALL';dtraderBuy()" title="Quick Rise">📈 Rise</button>
+        <button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="S.dtrader.mode='callput';S.dtrader.contractType='PUT';dtraderBuy()" title="Quick Fall">📉 Fall</button>
+      </div>`}
+    </div>
+  </div>`;
+}
+function drawDTraderChart() {
+  const canvas = document.getElementById('dtraderChart'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 300; const h = 320;
+  canvas.width = w; canvas.height = h;
+  const prices = S.tickHistory[S.dtrader.market] || [];
+  ctx.clearRect(0,0,w,h);
+  if (prices.length < 2) return;
+  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min)||1, pad = 24;
+  ctx.strokeStyle = 'rgba(30,58,95,0.6)'; ctx.lineWidth = 1;
+  for (let i=0;i<4;i++) { const y=pad+i*(h-pad*2)/3; ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke(); }
+  const grad = ctx.createLinearGradient(0,pad,0,h-pad);
+  grad.addColorStop(0,'rgba(0,212,255,0.25)'); grad.addColorStop(1,'rgba(0,212,255,0)');
+  ctx.fillStyle = grad; ctx.beginPath();
+  prices.forEach((p,i) => { const x=pad+(i/(prices.length-1))*(w-pad*2); const y=h-pad-((p-min)/range)*(h-pad*2); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.lineTo(w-pad,h-pad); ctx.lineTo(pad,h-pad); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'var(--cyan)'; ctx.lineWidth = 2; ctx.beginPath();
+  prices.forEach((p,i) => { const x=pad+(i/(prices.length-1))*(w-pad*2); const y=h-pad-((p-min)/range)*(h-pad*2); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.stroke();
+}
+function dtraderBuy() {
+  if (S.dtrader.contractId) { toast('Close your open contract first', 'warning'); return; }
+  const dt = S.dtrader;
+  if (dt.mode === 'accu') {
+    firePanelTrade('dtrader', { market: dt.market, contractType: 'ACCU', growthRate: dt.growthRate/100, stake: dt.stake, baseStake: dt.stake, useMartingale: false, mult: 1 });
+  } else {
+    const type = dt.contractType || 'CALL';
+    firePanelTrade('dtrader', { market: dt.market, contractType: type, ticks: dt.ticks, stake: dt.stake, baseStake: dt.stake, useMartingale: false, mult: 1 });
+  }
+}
+function sellDTraderContract() {
+  if (!S.dtrader.contractId) return;
+  ws_send({ sell: S.dtrader.contractId, price: 0 });
+}
+
+// ─── BULK TRADER ──────────────────────────────────────
+function renderBulkTrader() {
+  const bt = S.bulktrader;
+  const wr = bt.trades.length ? Math.round(bt.trades.filter(t=>t.isWin).length/bt.trades.length*100) : 0;
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Market</label>
+        <select class="form-control" onchange="S.bulktrader.market=this.value">
+          ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${bt.market===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">No. of Bulk Trades</label><input type="number" class="form-control" min="1" max="20" value="${bt.count}" onchange="S.bulktrader.count=Math.max(1,Math.min(20,parseInt(this.value)||1))"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${bt.ticks}" onchange="S.bulktrader.ticks=parseInt(this.value)||1"/></div>
+      <div class="form-group"><label class="form-label">Stake (each)</label><input type="number" class="form-control" step="0.01" min="0.35" value="${bt.stake}" onchange="S.bulktrader.stake=parseFloat(this.value)||0.5;S.bulktrader.currentStake=S.bulktrader.stake"/></div>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-icon">📚</div><div class="stat-val">${bt.trades.length}</div><div class="stat-label">Trades Fired</div></div>
+    <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-val">${wr}%</div><div class="stat-label">Win Rate</div></div>
+  </div>
+  <div class="grid-2">
+    <button class="btn btn-success btn-lg" style="justify-content:center" onclick="bulkFire('even')">Fire ${bt.count}× Even</button>
+    <button class="btn btn-danger btn-lg" style="justify-content:center" onclick="bulkFire('odd')">Fire ${bt.count}× Odd</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-header"><div class="card-title">📋 Recent Bulk Trades</div></div>
+    ${bt.trades.length===0?`<div style="text-align:center;padding:30px;color:var(--text3)">No trades yet</div>`
+    :bt.trades.slice(0,30).map(t=>`<div class="trade-item">
+      <span style="font-size:16px">${t.isWin?'✅':'❌'}</span>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${t.type}</div></div>
+      <div style="font-weight:700;color:${t.isWin?'var(--green)':'var(--red)'}">${fmt(t.profit)}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function bulkFire(which) {
+  const bt = S.bulktrader;
+  for (let i=0;i<bt.count;i++) {
+    firePanelTrade('bulktrader', { market: bt.market, contractType: which==='even'?'DIGITEVEN':'DIGITODD', ticks: bt.ticks, stake: bt.stake, baseStake: bt.stake, useMartingale: false, mult: 1 });
+  }
+}
+
+// ─── MATCHES ──────────────────────────────────────────
+function renderMatches() {
+  const m = S.matches;
+  const r = m.result;
+  const wr = m.trades.length ? Math.round(m.trades.filter(t=>t.isWin).length/m.trades.length*100) : 0;
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><div class="card-title">👑 King of Matches</div></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Market</label>
+        <select class="form-control" onchange="S.matches.market=this.value">
+          ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${m.market===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Ticks to Analyze</label><input type="number" class="form-control" min="50" max="5000" value="${m.ticks}" onchange="S.matches.ticks=parseInt(this.value)||1000"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${m.stake}" onchange="S.matches.stake=parseFloat(this.value)||0.5;S.matches.currentStake=S.matches.stake"/></div>
+    <button class="btn btn-primary" onclick="fetchDigitStats('matches', S.matches.market, S.matches.ticks)" ${m.loading?'disabled':''}>${m.loading?'<span class="spinner"></span> Analyzing…':'▶ Analyze Digits'}</button>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-val">${m.trades.length}</div><div class="stat-label">Trades Fired</div></div>
+    <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-val">${wr}%</div><div class="stat-label">Win Rate</div></div>
+  </div>
+  ${!r?`<div class="card"><div style="text-align:center;padding:30px;color:var(--text3)">Run an analysis first to find the most/least appearing digits.</div></div>`
+  :`<div class="card">
+    <div class="card-header"><div class="card-title">Digit Frequency</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:16px">
+      ${r.pct.map((p,d)=>`<div style="width:52px;height:52px;border-radius:50%;border:2px solid ${d===r.mostDigit?'var(--green)':(d===r.leastDigit?'var(--red)':'var(--border)')};display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:14px;font-weight:700">${d}</div><div style="font-size:9px;color:var(--text3)">${p.toFixed(1)}%</div>
+      </div>`).join('')}
+    </div>
+    <div class="grid-2">
+      <button class="btn btn-success" style="justify-content:center" onclick="matchesFire('most')">Match Most Appearing (${r.mostDigit})</button>
+      <button class="btn btn-danger" style="justify-content:center" onclick="matchesFire('least')">Match Least Appearing (${r.leastDigit})</button>
+    </div>
+  </div>`}`;
+}
+function matchesFire(which) {
+  const m = S.matches; const r = m.result; if (!r) { toast('Run an analysis first', 'warning'); return; }
+  const digit = which==='most' ? r.mostDigit : r.leastDigit;
+  firePanelTrade('matches', { market: m.market, contractType: 'DIGITMATCH', barrier: digit, ticks: 1, stake: m.currentStake, baseStake: m.stake, useMartingale: false, mult: 1 });
+}
+
 // ─── BACKTESTER ──────────────────────────────────────
 function renderBacktester() {
   const bt = S.backtest;
@@ -2194,6 +2542,10 @@ function renderSettings() {
 function bindPage(page) {
   if (page === 'dashboard') {
     drawProfitChart();
+  }
+  if (page === 'dtrader') {
+    subscribeTick(S.dtrader.market);
+    drawDTraderChart();
   }
   if (page === 'bot') {
     document.getElementById('cfgStrategy')?.addEventListener('change', e => {
