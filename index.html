@@ -752,8 +752,14 @@ body::before {
       <div class="nav-item" data-page="history" onclick="navigateTo('history')"><span class="nav-icon">📋</span><span class="nav-text">Trade History</span></div>
       <div class="nav-item" data-page="analysis" onclick="navigateTo('analysis')"><span class="nav-icon">📈</span><span class="nav-text">Analysis</span></div>
       <div class="nav-section">Tools</div>
+      <div class="nav-item" data-page="botbuilder" onclick="navigateTo('botbuilder')"><span class="nav-icon">🧩</span><span class="nav-text">Bot Builder</span></div>
+      <div class="nav-item" data-page="freebots" onclick="navigateTo('freebots')"><span class="nav-icon">🎁</span><span class="nav-text">Free Bots</span></div>
+      <div class="nav-item" data-page="analysistools" onclick="navigateTo('analysistools')"><span class="nav-icon">🔢</span><span class="nav-text">Analysis Tools</span></div>
+      <div class="nav-item" data-page="dtrader" onclick="navigateTo('dtrader')"><span class="nav-icon">📉</span><span class="nav-text">D-Trader</span></div>
       <div class="nav-item" data-page="speedbot" onclick="navigateTo('speedbot')"><span class="nav-icon">⚡</span><span class="nav-text">Speedbot</span></div>
       <div class="nav-item" data-page="autotrader" onclick="navigateTo('autotrader')"><span class="nav-icon">🎯</span><span class="nav-text">Auto Trader</span></div>
+      <div class="nav-item" data-page="bulktrader" onclick="navigateTo('bulktrader')"><span class="nav-icon">📚</span><span class="nav-text">Bulk Trader</span></div>
+      <div class="nav-item" data-page="matches" onclick="navigateTo('matches')"><span class="nav-icon">👑</span><span class="nav-text">Matches</span></div>
       <div class="nav-item" data-page="backtester" onclick="navigateTo('backtester')"><span class="nav-icon">⏪</span><span class="nav-text">Backtester</span></div>
       <div class="nav-item" data-page="risk" onclick="navigateTo('risk')"><span class="nav-icon">🛡️</span><span class="nav-text">Risk Manager</span></div>
       <div class="nav-item" data-page="notifications" onclick="navigateTo('notifications')"><span class="nav-icon">🔔</span><span class="nav-text">Notifications</span><span class="nav-badge" id="notifBadge" style="display:none">0</span></div>
@@ -878,7 +884,27 @@ const S = {
   contractSent: false,
   reqId: 1,
   pendingCalls: {},
+  pendingHistoryCalls: {},
   openPanelContracts: {},
+
+  // Analysis Tools (Phase 2)
+  analysisTools: { market: 'R_10', ticks: 120, result: null, loading: false },
+
+  // D-Trader (Phase 3)
+  dtrader: { market: 'R_100', mode: 'accu', growthRate: 3, stake: 10, ticks: 5, contractId: null, contractInfo: null },
+
+  // Bulk Trader (Phase 4)
+  bulktrader: { market: 'R_100', ticks: 1, stake: 0.5, count: 3, mult: 1.2, currentStake: 0.5, trades: [] },
+
+  // Matches (Phase 5)
+  matches: { market: 'R_10', ticks: 1000, stake: 0.5, currentStake: 0.5, mult: 1, trades: [], result: null, loading: false },
+
+  // Bot Builder + Free Bots (Phase 6)
+  botbuilder: {
+    market: 'R_100', contractType: 'DIGITEVEN', barrier: 5, ticks: 1, stake: 0.5,
+    useMartingale: true, mult: 2, currentStake: 0.5, restartOnLoss: true, maxTrades: 20,
+    tradesRun: 0, running: false, trades: [], log: [],
+  },
 
   // Speedbot
   speedbot: {
@@ -1100,6 +1126,12 @@ function handleMessage(msg) {
     if (S.tickHistory[t.symbol].length > 50) S.tickHistory[t.symbol].shift();
     updateTicker(t.symbol, t.quote, prev);
     if (S.running && S.bot.market === t.symbol) processTick(t);
+    if (S.activePage === 'dtrader' && t.symbol === S.dtrader.market) drawDTraderChart();
+  }
+
+  if (msg.msg_type === 'history') {
+    const call = S.pendingHistoryCalls[msg.req_id];
+    if (call) { delete S.pendingHistoryCalls[msg.req_id]; processDigitHistory(call.panelKey, msg.history); }
   }
 
   if (msg.msg_type === 'buy') {
@@ -1115,6 +1147,12 @@ function handleMessage(msg) {
 
   if (msg.msg_type === 'proposal_open_contract') {
     const c = msg.proposal_open_contract;
+    const panelCall = S.openPanelContracts[c.contract_id];
+    if (panelCall && panelCall.panelKey === 'dtrader' && !c.is_sold) {
+      S.dtrader.contractId = c.contract_id;
+      S.dtrader.contractInfo = c;
+      if (S.activePage === 'dtrader') renderPage('dtrader');
+    }
     if ((c.is_sold || c.status === 'sold') && S.openPanelContracts[c.contract_id]) {
       handlePanelSettle(c);
       return;
@@ -1273,7 +1311,13 @@ function stopBot() {
 function firePanelTrade(panelKey, cfg) {
   if (!S.connected) { toast('Not connected to Deriv', 'warning'); return; }
   const req = { proposal: 1, amount: cfg.stake, basis: 'stake', contract_type: cfg.contractType,
-    currency: S.currency, duration: cfg.ticks, duration_unit: 't', symbol: cfg.market };
+    currency: S.currency, symbol: cfg.market };
+  if (cfg.contractType === 'ACCU') {
+    req.growth_rate = cfg.growthRate;
+  } else {
+    req.duration = cfg.ticks;
+    req.duration_unit = 't';
+  }
   if (cfg.barrier !== undefined && cfg.barrier !== null) req.barrier = String(cfg.barrier);
   const reqId = ws_send(req);
   S.pendingCalls[reqId] = { panelKey, cfg };
@@ -1319,6 +1363,16 @@ function handlePanelSettle(contract) {
       S.speedbot.ticksProcessed++;
       if (S.speedbot.running) speedbotTradeOnce();
     }
+    if (panelKey === 'botbuilder') {
+      S.botbuilder.tradesRun++;
+      S.botbuilder.log.unshift(`${isWin?'✅ WIN':'❌ LOSS'} ${contract.contract_type} ${fmt(profit)}`);
+      if (S.botbuilder.log.length > 30) S.botbuilder.log.pop();
+      const stopByMax = S.botbuilder.maxTrades && S.botbuilder.tradesRun >= S.botbuilder.maxTrades;
+      const stopByLoss = !isWin && !S.botbuilder.restartOnLoss;
+      if (S.botbuilder.running && !stopByMax && !stopByLoss) botBuilderRunOnce();
+      else S.botbuilder.running = false;
+    }
+    if (panelKey === 'dtrader') { S.dtrader.contractId = null; S.dtrader.contractInfo = null; }
   }
   addTradeToFeed({ type: isWin?'win':'loss', desc: `${contract.contract_type} — ${isWin?'WIN':'LOSS'}`, amount: profit, time: new Date() });
   S.trades.unshift({ id: contract.contract_id, type: contract.contract_type, market: cfg.market, stake: cfg.stake, profit, result: isWin?'Win':'Loss', time: new Date().toISOString(), entry: contract.entry_tick, exit: contract.exit_tick });
@@ -1335,7 +1389,38 @@ function getPanelState(panelKey) {
   if (panelKey === 'ldp') return S.autotrader.ldp;
   if (panelKey === 'evenodd') return S.autotrader.evenodd;
   if (panelKey === 'risefall') return S.autotrader.risefall;
+  if (panelKey === 'bulktrader') return S.bulktrader;
+  if (panelKey === 'matches') return S.matches;
+  if (panelKey === 'botbuilder') return S.botbuilder;
+  if (panelKey === 'dtrader') return S.dtrader;
   return null;
+}
+
+function fetchDigitStats(panelKey, market, count) {
+  const targetState = getPanelState(panelKey);
+  if (targetState) targetState.loading = true;
+  const reqId = ws_send({ ticks_history: market, count: count, end: 'latest', style: 'ticks' });
+  S.pendingHistoryCalls[reqId] = { panelKey };
+  if (S.activePage === panelKey) renderPage(panelKey);
+}
+
+function processDigitHistory(panelKey, history) {
+  const prices = history.prices || [];
+  const digits = prices.map(p => { const s = String(p).replace(/[^0-9]/g,''); return parseInt(s.slice(-1),10); }).filter(d=>!isNaN(d));
+  const counts = Array(10).fill(0);
+  digits.forEach(d => counts[d]++);
+  const total = digits.length || 1;
+  const pct = counts.map(c => c/total*100);
+  const evenCount = digits.filter(d=>d%2===0).length;
+  const result = {
+    counts, pct, sequence: digits.slice(-20),
+    evenPct: evenCount/total*100, oddPct: (digits.length-evenCount)/total*100,
+    lastPrice: prices[prices.length-1],
+    mostDigit: pct.indexOf(Math.max(...pct)), leastDigit: pct.indexOf(Math.min(...pct)),
+  };
+  const st = getPanelState(panelKey);
+  if (st) { st.result = result; st.loading = false; }
+  if (S.activePage === panelKey) renderPage(panelKey);
 }
 
 function subscribeTick(symbol) {
@@ -1348,7 +1433,7 @@ function navigateTo(page) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page);
   });
-  const titles = { dashboard:'Dashboard', bot:'Run Bot', strategies:'Strategies', history:'Trade History', analysis:'Analysis', speedbot:'Speedbot', autotrader:'Auto Trader', backtester:'Backtester', risk:'Risk Manager', notifications:'Notifications', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', bot:'Run Bot', strategies:'Strategies', history:'Trade History', analysis:'Analysis', speedbot:'Speedbot', autotrader:'Auto Trader', botbuilder:'Bot Builder', freebots:'Free Bots', analysistools:'Analysis Tools', dtrader:'D-Trader', bulktrader:'Bulk Trader', matches:'Matches', backtester:'Backtester', risk:'Risk Manager', notifications:'Notifications', settings:'Settings' };
   document.getElementById('topbarTitle').textContent = titles[page] || page;
   renderPage(page);
 }
@@ -1364,6 +1449,12 @@ function renderPage(page) {
     analysis: renderAnalysis,
     speedbot: renderSpeedbot,
     autotrader: renderAutoTrader,
+    botbuilder: renderBotBuilder,
+    freebots: renderFreeBots,
+    analysistools: renderAnalysisTools,
+    dtrader: renderDTrader,
+    bulktrader: renderBulkTrader,
+    matches: renderMatches,
     backtester: renderBacktester,
     risk: renderRisk,
     notifications: renderNotifications,
