@@ -752,6 +752,8 @@ body::before {
       <div class="nav-item" data-page="history" onclick="navigateTo('history')"><span class="nav-icon">📋</span><span class="nav-text">Trade History</span></div>
       <div class="nav-item" data-page="analysis" onclick="navigateTo('analysis')"><span class="nav-icon">📈</span><span class="nav-text">Analysis</span></div>
       <div class="nav-section">Tools</div>
+      <div class="nav-item" data-page="speedbot" onclick="navigateTo('speedbot')"><span class="nav-icon">⚡</span><span class="nav-text">Speedbot</span></div>
+      <div class="nav-item" data-page="autotrader" onclick="navigateTo('autotrader')"><span class="nav-icon">🎯</span><span class="nav-text">Auto Trader</span></div>
       <div class="nav-item" data-page="backtester" onclick="navigateTo('backtester')"><span class="nav-icon">⏪</span><span class="nav-text">Backtester</span></div>
       <div class="nav-item" data-page="risk" onclick="navigateTo('risk')"><span class="nav-icon">🛡️</span><span class="nav-text">Risk Manager</span></div>
       <div class="nav-item" data-page="notifications" onclick="navigateTo('notifications')"><span class="nav-icon">🔔</span><span class="nav-text">Notifications</span><span class="nav-badge" id="notifBadge" style="display:none">0</span></div>
@@ -876,6 +878,31 @@ const S = {
   contractSent: false,
   reqId: 1,
   pendingCalls: {},
+  openPanelContracts: {},
+
+  // Speedbot
+  speedbot: {
+    market: 'R_100',
+    tradeType: 'DIGITEVEN',
+    barrier: 5,
+    ticks: 1,
+    stake: 0.5,
+    useMartingale: true,
+    martMultiplier: 1.15,
+    currentStake: 0.5,
+    running: false,
+    ticksProcessed: 0,
+    lastDigit: null,
+    trades: [],
+  },
+
+  // Auto Trader (3 independent one-click panels)
+  autotrader: {
+    market: 'R_100',
+    ldp: { mode:'over', digit:8, ticks:1, stake:0.5, mult:1.2, currentStake:0.5, trades:[] },
+    evenodd: { ticks:1, stake:0.5, mult:1.2, currentStake:0.5, trades:[] },
+    risefall: { ticks:1, stake:0.5, mult:1.2, currentStake:0.5, trades:[] },
+  },
 
   // Ticker data
   ticks: {},
@@ -1016,6 +1043,12 @@ function handleMessage(msg) {
       S.token = null; S.accountId = null;
     } else {
       toast('⚠️ ' + (msg.error.message || 'API error'), 'warning');
+      if (msg.req_id && S.pendingCalls[msg.req_id]) {
+        const { panelKey } = S.pendingCalls[msg.req_id];
+        delete S.pendingCalls[msg.req_id];
+        if (panelKey === 'speedbot') S.speedbot.running = false;
+        if (S.activePage === panelKey) renderPage(panelKey);
+      }
     }
     return;
   }
@@ -1071,6 +1104,7 @@ function handleMessage(msg) {
 
   if (msg.msg_type === 'buy') {
     if (msg.buy) {
+      if (handlePanelBuy(msg.req_id, msg.buy)) return;
       const c = msg.buy;
       S.openContracts[c.contract_id] = { ...c, stake: S.currentStake };
       S.contractSent = false;
@@ -1081,6 +1115,10 @@ function handleMessage(msg) {
 
   if (msg.msg_type === 'proposal_open_contract') {
     const c = msg.proposal_open_contract;
+    if ((c.is_sold || c.status === 'sold') && S.openPanelContracts[c.contract_id]) {
+      handlePanelSettle(c);
+      return;
+    }
     if (c.is_sold || c.status === 'sold') {
       const isWin = parseFloat(c.profit) > 0;
       const profit = parseFloat(c.profit);
@@ -1129,10 +1167,13 @@ function handleMessage(msg) {
   }
 
   if (msg.msg_type === 'proposal') {
-    if (msg.proposal && S.running && !S.contractSent) {
-      const proposal = msg.proposal;
-      S.contractSent = true;
-      ws_send({ buy: proposal.id, price: S.currentStake });
+    if (msg.proposal) {
+      if (handlePanelProposal(msg.req_id, msg.proposal)) return;
+      if (S.running && !S.contractSent) {
+        const proposal = msg.proposal;
+        S.contractSent = true;
+        ws_send({ buy: proposal.id, price: S.currentStake });
+      }
     }
   }
 }
@@ -1226,6 +1267,77 @@ function stopBot() {
   if (S.activePage === 'bot' || S.activePage === 'dashboard') renderPage(S.activePage);
 }
 
+// ─── PANEL TRADING ENGINE (Speedbot / Auto Trader) ──
+// Independent one-click trade pipeline. Doesn't touch S.running / S.bot,
+// so it can't interfere with the Run Bot auto-strategy engine.
+function firePanelTrade(panelKey, cfg) {
+  if (!S.connected) { toast('Not connected to Deriv', 'warning'); return; }
+  const req = { proposal: 1, amount: cfg.stake, basis: 'stake', contract_type: cfg.contractType,
+    currency: S.currency, duration: cfg.ticks, duration_unit: 't', symbol: cfg.market };
+  if (cfg.barrier !== undefined && cfg.barrier !== null) req.barrier = String(cfg.barrier);
+  const reqId = ws_send(req);
+  S.pendingCalls[reqId] = { panelKey, cfg };
+}
+
+function handlePanelProposal(reqId, proposal) {
+  const call = S.pendingCalls[reqId];
+  delete S.pendingCalls[reqId];
+  if (!call) return false;
+  const buyReqId = ws_send({ buy: proposal.id, price: call.cfg.stake });
+  S.pendingCalls[buyReqId] = call;
+  return true;
+}
+
+function handlePanelBuy(reqId, buyMsg) {
+  const call = S.pendingCalls[reqId];
+  delete S.pendingCalls[reqId];
+  if (!call) return false;
+  S.openPanelContracts[buyMsg.contract_id] = call;
+  ws_send({ proposal_open_contract: 1, contract_id: buyMsg.contract_id, subscribe: 1 });
+  return true;
+}
+
+function handlePanelSettle(contract) {
+  const call = S.openPanelContracts[contract.contract_id];
+  if (!call) return false;
+  delete S.openPanelContracts[contract.contract_id];
+
+  const isWin = parseFloat(contract.profit) > 0;
+  const profit = parseFloat(contract.profit);
+  S.sessionProfit += profit; S.sessionTrades++;
+  isWin ? S.sessionWins++ : S.sessionLosses++;
+
+  const { panelKey, cfg } = call;
+  const panelState = getPanelState(panelKey);
+  if (panelState) {
+    panelState.trades.unshift({ type: contract.contract_type, isWin, profit, stake: cfg.stake, time: new Date().toISOString() });
+    if (panelState.trades.length > 50) panelState.trades.pop();
+    if (cfg.useMartingale) {
+      panelState.currentStake = isWin ? cfg.baseStake : Math.min(panelState.currentStake * cfg.mult, S.balance || Infinity);
+    }
+    if (panelKey === 'speedbot') {
+      S.speedbot.ticksProcessed++;
+      if (S.speedbot.running) speedbotTradeOnce();
+    }
+  }
+  addTradeToFeed({ type: isWin?'win':'loss', desc: `${contract.contract_type} — ${isWin?'WIN':'LOSS'}`, amount: profit, time: new Date() });
+  S.trades.unshift({ id: contract.contract_id, type: contract.contract_type, market: cfg.market, stake: cfg.stake, profit, result: isWin?'Win':'Loss', time: new Date().toISOString(), entry: contract.entry_tick, exit: contract.exit_tick });
+  if (S.trades.length > 500) S.trades.pop();
+  if (S.activePage === 'dashboard') refreshDashboard();
+  if (S.activePage === 'history') renderPage('history');
+  if (S.activePage === panelKey) renderPage(panelKey);
+  sendTelegramNotification(isWin, profit, contract.contract_id);
+  return true;
+}
+
+function getPanelState(panelKey) {
+  if (panelKey === 'speedbot') return S.speedbot;
+  if (panelKey === 'ldp') return S.autotrader.ldp;
+  if (panelKey === 'evenodd') return S.autotrader.evenodd;
+  if (panelKey === 'risefall') return S.autotrader.risefall;
+  return null;
+}
+
 function subscribeTick(symbol) {
   ws_send({ ticks: symbol, subscribe: 1 });
 }
@@ -1236,7 +1348,7 @@ function navigateTo(page) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page);
   });
-  const titles = { dashboard:'Dashboard', bot:'Run Bot', strategies:'Strategies', history:'Trade History', analysis:'Analysis', backtester:'Backtester', risk:'Risk Manager', notifications:'Notifications', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', bot:'Run Bot', strategies:'Strategies', history:'Trade History', analysis:'Analysis', speedbot:'Speedbot', autotrader:'Auto Trader', backtester:'Backtester', risk:'Risk Manager', notifications:'Notifications', settings:'Settings' };
   document.getElementById('topbarTitle').textContent = titles[page] || page;
   renderPage(page);
 }
@@ -1250,6 +1362,8 @@ function renderPage(page) {
     strategies: renderStrategies,
     history: renderHistory,
     analysis: renderAnalysis,
+    speedbot: renderSpeedbot,
+    autotrader: renderAutoTrader,
     backtester: renderBacktester,
     risk: renderRisk,
     notifications: renderNotifications,
@@ -1594,6 +1708,161 @@ function renderAnalysis() {
     </div>
     <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">Trade outcomes by hour (green = winning hour)</div>
   </div>`;
+}
+
+// ─── SPEEDBOT ────────────────────────────────────────
+function renderSpeedbot() {
+  const sb = S.speedbot;
+  const showBarrier = sb.tradeType === 'DIGITOVER' || sb.tradeType === 'DIGITUNDER';
+  const winRate = sb.trades.length ? Math.round(sb.trades.filter(t=>t.isWin).length/sb.trades.length*100) : 0;
+  return `
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-val">${sb.ticksProcessed}</div><div class="stat-label">Trades Fired</div></div>
+    <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-val">${fmtBal(sb.currentStake)}</div><div class="stat-label">Next Stake</div></div>
+    <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-val">${winRate}%</div><div class="stat-label">Win Rate</div></div>
+    <div class="stat-card"><div class="stat-icon">${sb.running?'🟢':'⚪'}</div><div class="stat-val">${sb.running?'ON':'OFF'}</div><div class="stat-label">Auto Trading</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚡ Speedbot Settings</div></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Market</label>
+          <select class="form-control" onchange="S.speedbot.market=this.value">
+            ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${sb.market===k?' selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Trade Type</label>
+          <select class="form-control" onchange="S.speedbot.tradeType=this.value;renderPage('speedbot')">
+            <option value="DIGITEVEN"${sb.tradeType==='DIGITEVEN'?' selected':''}>Even</option>
+            <option value="DIGITODD"${sb.tradeType==='DIGITODD'?' selected':''}>Odd</option>
+            <option value="CALL"${sb.tradeType==='CALL'?' selected':''}>Rise</option>
+            <option value="PUT"${sb.tradeType==='PUT'?' selected':''}>Fall</option>
+            <option value="DIGITOVER"${sb.tradeType==='DIGITOVER'?' selected':''}>Digit Over</option>
+            <option value="DIGITUNDER"${sb.tradeType==='DIGITUNDER'?' selected':''}>Digit Under</option>
+          </select>
+        </div>
+      </div>
+      ${showBarrier?`<div class="form-group"><label class="form-label">Barrier Digit (0–9)</label><input type="number" class="form-control" min="0" max="9" value="${sb.barrier}" onchange="S.speedbot.barrier=Math.max(0,Math.min(9,parseInt(this.value)||0))"/></div>`:''}
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${sb.ticks}" onchange="S.speedbot.ticks=parseInt(this.value)||1"/></div>
+        <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${sb.stake}" onchange="S.speedbot.stake=parseFloat(this.value)||0.5;S.speedbot.currentStake=S.speedbot.stake"/></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin:10px 0">
+        <label class="toggle"><input type="checkbox" ${sb.useMartingale?'checked':''} onchange="S.speedbot.useMartingale=this.checked;renderPage('speedbot')"><span class="toggle-slider"></span></label>
+        <span style="font-size:13px;color:var(--text2)">Use Martingale on loss</span>
+      </div>
+      ${sb.useMartingale?`<div class="form-group"><label class="form-label">Martingale Multiplier</label><input type="number" class="form-control" step="0.01" min="1" value="${sb.martMultiplier}" onchange="S.speedbot.martMultiplier=parseFloat(this.value)||1.15"/></div>`:''}
+      <div class="divider"></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="speedbotTradeOnce()">Trade Once</button>
+        <button class="btn ${sb.running?'btn-danger':'btn-success'}" style="flex:1;justify-content:center" onclick="speedbotToggleStart()">${sb.running?'⏹ Stop Trading':'▶ Start Trading'}</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 Recent Speedbot Trades</div><span class="badge badge-cyan">${sb.trades.length}</span></div>
+      ${sb.trades.length===0?`<div style="text-align:center;padding:30px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">⚡</div><p>No trades yet</p></div>`
+      :sb.trades.slice(0,20).map(t=>`<div class="trade-item">
+        <span style="font-size:16px">${t.isWin?'✅':'❌'}</span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">${t.type}</div><div style="font-size:11px;color:var(--text3)">Stake ${fmtBal(t.stake)}</div></div>
+        <div style="font-weight:700;color:${t.isWin?'var(--green)':'var(--red)'}">${fmt(t.profit)}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function speedbotBuildContractType() {
+  const t = S.speedbot.tradeType;
+  if (t === 'DIGITOVER' || t === 'DIGITUNDER') return { contractType: t, barrier: S.speedbot.barrier };
+  return { contractType: t, barrier: undefined };
+}
+function speedbotTradeOnce() {
+  const { contractType, barrier } = speedbotBuildContractType();
+  firePanelTrade('speedbot', {
+    market: S.speedbot.market, contractType, barrier,
+    ticks: S.speedbot.ticks, stake: S.speedbot.currentStake, baseStake: S.speedbot.stake,
+    useMartingale: S.speedbot.useMartingale, mult: S.speedbot.martMultiplier,
+  });
+}
+function speedbotToggleStart() {
+  S.speedbot.running = !S.speedbot.running;
+  if (S.speedbot.running) { S.speedbot.currentStake = S.speedbot.stake; speedbotTradeOnce(); }
+  else renderPage('speedbot');
+}
+
+// ─── AUTO TRADER ─────────────────────────────────────
+function renderAutoTrader() {
+  const at = S.autotrader;
+  const wr = (st) => st.trades.length ? Math.round(st.trades.filter(t=>t.isWin).length/st.trades.length*100) : 0;
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Market</label>
+        <select class="form-control" onchange="S.autotrader.market=this.value">
+          ${Object.entries(MARKETS).map(([k,v])=>`<option value="${k}"${at.market===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><div class="card-title">🎯 Last Digit Prediction (LDP)</div><span class="badge badge-cyan">${wr(at.ldp)}% win rate</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:14px">
+      ${Array.from({length:10},(_,d)=>`<div onclick="selectLDPDigit(${d})" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700;border:2px solid ${at.ldp.digit===d?'var(--cyan)':'var(--border)'};background:${at.ldp.digit===d?'var(--cyan)':'var(--bg)'};color:${at.ldp.digit===d?'#000':'var(--text)'};transition:.15s">${d}</div>`).join('')}
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${at.ldp.ticks}" onchange="S.autotrader.ldp.ticks=parseInt(this.value)||1"/></div>
+      <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${at.ldp.stake}" onchange="S.autotrader.ldp.stake=parseFloat(this.value)||0.5;S.autotrader.ldp.currentStake=S.autotrader.ldp.stake"/></div>
+      <div class="form-group"><label class="form-label">Martingale ×</label><input type="number" class="form-control" step="0.01" min="1" value="${at.ldp.mult}" onchange="S.autotrader.ldp.mult=parseFloat(this.value)||1.2"/></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px">
+      <button class="btn btn-success" style="justify-content:center" onclick="ldpFire('over')">Over ${wr(at.ldp)}%</button>
+      <button class="btn btn-danger" style="justify-content:center" onclick="ldpFire('under')">Under ${wr(at.ldp)}%</button>
+      <button class="btn btn-primary" style="justify-content:center" onclick="ldpFire('matches')">Matches</button>
+      <button class="btn btn-danger" style="justify-content:center" onclick="ldpFire('differs')">Differs</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Even / Odd</div><span class="badge badge-cyan">${wr(at.evenodd)}% win rate</span></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${at.evenodd.ticks}" onchange="S.autotrader.evenodd.ticks=parseInt(this.value)||1"/></div>
+        <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${at.evenodd.stake}" onchange="S.autotrader.evenodd.stake=parseFloat(this.value)||0.5;S.autotrader.evenodd.currentStake=S.autotrader.evenodd.stake"/></div>
+        <div class="form-group"><label class="form-label">Martingale ×</label><input type="number" class="form-control" step="0.01" min="1" value="${at.evenodd.mult}" onchange="S.autotrader.evenodd.mult=parseFloat(this.value)||1.2"/></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-success" style="flex:1;justify-content:center" onclick="evenoddFire('even')">Even</button>
+        <button class="btn btn-danger" style="flex:1;justify-content:center" onclick="evenoddFire('odd')">Odd</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Rise / Fall</div><span class="badge badge-cyan">${wr(at.risefall)}% win rate</span></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Ticks</label><input type="number" class="form-control" min="1" value="${at.risefall.ticks}" onchange="S.autotrader.risefall.ticks=parseInt(this.value)||1"/></div>
+        <div class="form-group"><label class="form-label">Stake</label><input type="number" class="form-control" step="0.01" min="0.35" value="${at.risefall.stake}" onchange="S.autotrader.risefall.stake=parseFloat(this.value)||0.5;S.autotrader.risefall.currentStake=S.autotrader.risefall.stake"/></div>
+        <div class="form-group"><label class="form-label">Martingale ×</label><input type="number" class="form-control" step="0.01" min="1" value="${at.risefall.mult}" onchange="S.autotrader.risefall.mult=parseFloat(this.value)||1.2"/></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-success" style="flex:1;justify-content:center" onclick="risefallFire('rise')">Rise</button>
+        <button class="btn btn-danger" style="flex:1;justify-content:center" onclick="risefallFire('fall')">Fall</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function selectLDPDigit(d) { S.autotrader.ldp.digit = d; renderPage('autotrader'); }
+function ldpFire(mode) {
+  const st = S.autotrader.ldp;
+  const map = { over:'DIGITOVER', under:'DIGITUNDER', matches:'DIGITMATCH', differs:'DIGITDIFF' };
+  firePanelTrade('ldp', { market: S.autotrader.market, contractType: map[mode], barrier: st.digit, ticks: st.ticks, stake: st.currentStake, baseStake: st.stake, useMartingale: true, mult: st.mult });
+}
+function evenoddFire(which) {
+  const st = S.autotrader.evenodd;
+  firePanelTrade('evenodd', { market: S.autotrader.market, contractType: which==='even'?'DIGITEVEN':'DIGITODD', ticks: st.ticks, stake: st.currentStake, baseStake: st.stake, useMartingale: true, mult: st.mult });
+}
+function risefallFire(which) {
+  const st = S.autotrader.risefall;
+  firePanelTrade('risefall', { market: S.autotrader.market, contractType: which==='rise'?'CALL':'PUT', ticks: st.ticks, stake: st.currentStake, baseStake: st.stake, useMartingale: true, mult: st.mult });
 }
 
 // ─── BACKTESTER ──────────────────────────────────────
