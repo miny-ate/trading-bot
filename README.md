@@ -2,7 +2,7 @@
 
 This repository contains a responsive React recreation of the public landing page supplied at [blueman.site](https://blueman.site), rebranded as **Ernest**. It preserves the reference page’s public composition and behavior: a dark trading-night hero, market ticker, typed headline, status badge, continuously moving workspace activity cards, secure-login link, signup link, and an in-page workspace preview.
 
-The authenticated Ernest workspace is available at `/workspace` after OAuth. It includes the screenshot-defined module shell, account selector and balance sync, public live market streaming, Bot Builder drafts, Free Bots templates, Strategies, Analysis Tools, Charts, D-Trader contract preview, Auto Trader/Bulk Trader/Signals/Matches/Speedbot/Copy Trading safety states, Reports links, execution-bar safeguards, and risk disclosure. Real-money order execution is intentionally not silently simulated; it requires a provider-backed authenticated channel and explicit user review.
+The authenticated Ernest workspace is available at `/workspace` in local development and at `/?view=workspace` after production OAuth. It includes the screenshot-defined module shell, account selector and balance sync, public live market streaming, Bot Builder drafts, Free Bots templates, Strategies, Analysis Tools, Charts, D-Trader contract preview, Auto Trader/Bulk Trader/Signals/Matches/Speedbot/Copy Trading safety states, Reports links, execution-bar safeguards, and risk disclosure. Real-money order execution is intentionally not silently simulated; it requires a provider-backed authenticated channel and explicit user review.
 
 ## Local development
 
