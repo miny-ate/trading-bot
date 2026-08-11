@@ -2,7 +2,7 @@
 
 This repository contains a responsive React recreation of the public landing page supplied at [blueman.site](https://blueman.site), rebranded as **Ernest**. It preserves the reference page’s public composition and behavior: a dark trading-night hero, market ticker, typed headline, status badge, continuously moving workspace activity cards, secure-login link, signup link, and an in-page workspace preview.
 
-The authenticated Deriv workspace itself is not reproduced. The login and signup actions continue to the public Deriv destinations used by the reference, while the workspace button provides a safe Ernest preview before the user continues to secure login.
+The authenticated Ernest workspace is available at `/workspace` after OAuth. It includes the screenshot-defined module shell, account selector and balance sync, public live market streaming, Bot Builder drafts, Free Bots templates, Strategies, Analysis Tools, Charts, D-Trader contract preview, Auto Trader/Bulk Trader/Signals/Matches/Speedbot/Copy Trading safety states, Reports links, execution-bar safeguards, and risk disclosure. Real-money order execution is intentionally not silently simulated; it requires a provider-backed authenticated channel and explicit user review.
 
 ## Local development
 
@@ -33,4 +33,4 @@ The compressed hero background and Ernest mark are stored under `client/public/a
 
 ## Project structure
 
-The frontend lives in `client/src`. `client/src/pages/Home.tsx` contains the landing-page behavior, while `client/src/index.css` contains the visual system and responsive layout. The included workflow is ready for GitHub Pages; no backend or database is required for this public landing page.
+The frontend lives in `client/src`. `client/src/pages/Home.tsx` contains the landing-page and OAuth behavior, `client/src/pages/Workspace.tsx` contains the authenticated workspace, and `client/src/index.css` contains the visual system and responsive layout. Vercel functions under `api/` proxy Deriv account data and token exchange without exposing provider requests directly from the browser.
