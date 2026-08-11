@@ -1,4 +1,4 @@
-const DERIV_CLIENT_ID = process.env.DERIV_CLIENT_ID || '3434Bcz0PN0zjyY91841d';
+const DERIV_CLIENT_ID = process.env.DERIV_CLIENT_ID || '3434BczOPNUZyjY9I841d';
 const DERIV_REDIRECT_URI = process.env.DERIV_REDIRECT_URI || 'https://ernest.co.ke';
 
 export default {

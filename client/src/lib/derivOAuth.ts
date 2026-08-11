@@ -1,7 +1,7 @@
 // Design philosophy: keep OAuth mechanics invisible and calm — the Ernest landing page remains focused while secure redirect state is handled deterministically.
 
 export const DERIV_AUTHORIZATION_ENDPOINT = "https://auth.deriv.com/oauth2/auth";
-export const DERIV_CLIENT_ID = import.meta.env.VITE_DERIV_CLIENT_ID || "3434Bcz0PN0zjyY91841d";
+export const DERIV_CLIENT_ID = import.meta.env.VITE_DERIV_CLIENT_ID || "3434BczOPNUZyjY9I841d";
 export const DERIV_REDIRECT_URI = "https://ernest.co.ke";
 export const DERIV_SCOPE = "trade payment";
 export const OAUTH_REQUEST_STORAGE_KEY = "ernest_deriv_oauth_request";
