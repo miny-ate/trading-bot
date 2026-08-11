@@ -31,7 +31,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--lime); outline-
 .brand { display: inline-flex; align-items: center; gap: 9px; color: #f7ffff; text-decoration: none; font-family: "Space Grotesk", sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -.03em; }
 .brand-mark { width: 28px; height: 28px; border-radius: 7px; object-fit: cover; background: var(--cyan); }
 .nav-actions { display: flex; align-items: center; gap: 14px; }
-.login-link, .signup-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: 4px; text-decoration: none; font-size: 10px; font-weight: 700; letter-spacing: -.01em; transition: transform 160ms var(--ease-out), color 160ms ease, background 160ms ease; }
+.login-link, .signup-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 4px; text-decoration: none; font-size: 10px; font-weight: 700; letter-spacing: -.01em; cursor: pointer; transition: transform 160ms var(--ease-out), color 160ms ease, background 160ms ease; }
 .login-link { color: #d1dfed; padding: 9px 10px; }
 .login-link:hover { color: var(--cyan); transform: translateY(-1px); }
 .signup-link { color: #07121b; background: var(--cyan); padding: 9px 13px; box-shadow: 0 0 24px rgba(19, 232, 234, .18); }
@@ -56,7 +56,7 @@ h1 { max-width: 820px; margin: 17px auto 12px; color: #f4f8fb; font-family: "Spa
 .typing-cursor { display: inline-block; width: 3px; height: .78em; margin-left: 5px; vertical-align: -.06em; background: var(--cyan); box-shadow: 0 0 13px rgba(19, 232, 234, .62); animation: blink 850ms steps(1) infinite; }
 .hero-copy p { max-width: 550px; margin: 0 auto; color: #aab9c8; font-size: 12px; line-height: 1.8; }
 .hero-actions { display: flex; justify-content: center; gap: 9px; margin-top: 23px; }
-.primary-cta, .secondary-cta, .modal-cta { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 38px; padding: 0 17px; border-radius: 3px; font-size: 11px; font-weight: 800; text-decoration: none; transition: transform 160ms var(--ease-out), background 160ms ease, border-color 160ms ease; }
+.primary-cta, .secondary-cta, .modal-cta { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 38px; padding: 0 17px; border: 0; border-radius: 3px; font-size: 11px; font-weight: 800; text-decoration: none; cursor: pointer; transition: transform 160ms var(--ease-out), background 160ms ease, border-color 160ms ease; }
 .primary-cta { border: 0; color: #03131b; background: var(--cyan); box-shadow: 0 0 26px rgba(19, 232, 234, .16); }
 .primary-cta:hover { background: #8bfff7; transform: translateY(-2px); }
 .secondary-cta { color: #d9f5f7; border: 1px solid rgba(19, 232, 234, .48); background: rgba(4, 24, 40, .36); }
@@ -97,6 +97,16 @@ h1 { max-width: 820px; margin: 17px auto 12px; color: #f4f8fb; font-family: "Spa
 .preview-panels b { color: var(--lime); font-family: "Space Grotesk", sans-serif; font-size: 9px; }
 .modal-cta { width: 100%; color: #03131b; background: var(--cyan); }
 .modal-cta:hover { background: #8bfff7; }
+.oauth-status { position: fixed; right: 22px; bottom: 22px; z-index: 60; display: flex; align-items: flex-start; gap: 10px; width: min(380px, calc(100vw - 32px)); padding: 14px 14px 14px 16px; color: #d9eff6; border: 1px solid rgba(19, 232, 234, .34); border-radius: 9px; background: rgba(4, 20, 38, .96); box-shadow: 0 20px 60px rgba(0, 0, 0, .34); backdrop-filter: blur(14px); animation: modal-in 240ms var(--ease-out) both; }
+.oauth-status-dot { width: 7px; height: 7px; flex: 0 0 7px; margin-top: 5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+.oauth-status--success { border-color: rgba(129, 239, 207, .45); }
+.oauth-status--success .oauth-status-dot { background: #81efcf; box-shadow: 0 0 10px #81efcf; }
+.oauth-status--error { border-color: rgba(245, 132, 146, .5); }
+.oauth-status--error .oauth-status-dot { background: #f58492; box-shadow: 0 0 10px #f58492; }
+.oauth-status strong { display: block; color: #f4fbff; font-size: 11px; }
+.oauth-status p { margin: 4px 0 0; color: #9eb6c8; font-size: 10px; line-height: 1.5; }
+.oauth-status button { display: grid; place-items: center; margin: -3px -4px 0 auto; padding: 4px; color: #9eb6c8; border: 0; background: transparent; cursor: pointer; }
+.oauth-status button:hover { color: #fff; }
 
 @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @keyframes reviews { from { transform: translateX(0); } to { transform: translateX(calc(-50% - 5px)); } }

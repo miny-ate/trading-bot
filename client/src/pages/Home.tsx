@@ -1,9 +1,10 @@
 // Design philosophy: a close reproduction of the reference’s single-screen landing page, rebranded to Ernest and limited to public, safe interactions.
 import { ArrowRight, Bot, ExternalLink, LogIn, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { beginDerivOAuth, clearOAuthRequest, DERIV_CLIENT_ID, DERIV_REDIRECT_URI, getStoredOAuthRequest } from "@/lib/derivOAuth";
 
-const SIGNUP_URL = "https://track.deriv.com/_2yZaBZhr48dMjdsyM5hasGNd7ZgqdRLk/1/";
-const LOGIN_URL = "https://home.deriv.com/dashboard/login";
+const TOKEN_STORAGE_KEY = "ernest_deriv_access_token";
+type OAuthStatus = "idle" | "starting" | "processing" | "success" | "error";
 
 const marketItems = [
   ["↗", "Volatility 100", "+1.86%", true],
@@ -26,6 +27,33 @@ export default function Home() {
   const [headline, setHeadline] = useState(headlines[0]);
   const [headlineIndex, setHeadlineIndex] = useState(0);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [oauthStatus, setOauthStatus] = useState<OAuthStatus>("idle");
+  const [oauthMessage, setOauthMessage] = useState("");
+  const callbackHandledRef = useRef(false);
+
+  const startOAuth = (signup = false) => {
+    setOauthStatus("starting");
+    setOauthMessage(signup ? "Preparing secure account creation…" : "Preparing secure Deriv sign-in…");
+    void beginDerivOAuth({ signup }).catch((error: Error) => { setOauthStatus("error"); setOauthMessage(error.message || "Unable to start secure sign-in."); });
+  };
+
+  useEffect(() => {
+    if (callbackHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const returnedState = params.get("state");
+    const providerError = params.get("error");
+    if (!code && !providerError) return;
+    callbackHandledRef.current = true;
+    window.history.replaceState({}, document.title, "/");
+    if (providerError) { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage(params.get("error_description") || "Deriv sign-in was cancelled."); return; }
+    const storedRequest = getStoredOAuthRequest();
+    if (!code || !returnedState || !storedRequest || returnedState !== storedRequest.state) { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage("The OAuth security check failed. Please start sign-in again."); return; }
+    setOauthStatus("processing"); setOauthMessage("Finishing your secure Deriv connection…");
+    fetch("/api/oauth/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, code_verifier: storedRequest.codeVerifier, redirect_uri: DERIV_REDIRECT_URI, client_id: DERIV_CLIENT_ID }) })
+      .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok || !data.access_token) throw new Error(data.error || "Deriv token exchange failed."); sessionStorage.setItem(TOKEN_STORAGE_KEY, data.access_token); if (data.expires_in) sessionStorage.setItem("ernest_deriv_token_expires_at", String(Date.now() + data.expires_in * 1000)); clearOAuthRequest(); setOauthStatus("success"); setOauthMessage("Your Deriv account is connected. Ernest is ready for your workspace."); })
+      .catch((error: Error) => { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage(error.message || "Unable to complete Deriv sign-in."); });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,13 +109,13 @@ export default function Home() {
           <span>Ernest</span>
         </a>
         <div className="nav-actions">
-          <a className="login-link" href={LOGIN_URL} target="_blank" rel="noreferrer">
+          <button className="login-link" type="button" onClick={() => startOAuth(false)}>
             <LogIn size={13} strokeWidth={2.2} />
             Log in
-          </a>
-          <a className="signup-link" href={SIGNUP_URL} target="_blank" rel="noreferrer">
+          </button>
+          <button className="signup-link" type="button" onClick={() => startOAuth(true)}>
             Get started <ExternalLink size={12} strokeWidth={2.3} />
-          </a>
+          </button>
         </div>
       </nav>
 
@@ -112,7 +140,7 @@ export default function Home() {
             <button className="primary-cta" type="button" onClick={() => setIsWorkspaceOpen(true)}>
               Open workspace <ArrowRight size={14} strokeWidth={2.8} />
             </button>
-            <a className="secondary-cta" href={SIGNUP_URL} target="_blank" rel="noreferrer">Create free account</a>
+            <button className="secondary-cta" type="button" onClick={() => startOAuth(true)}>Create free account</button>
           </div>
           <div className="trust-row" aria-label="Product assurances">
             <span>✓ Free bot tools</span>
@@ -152,8 +180,16 @@ export default function Home() {
             <h2 id="workspace-title">Your bots, one focused workspace.</h2>
             <p>Connect your Deriv account to build, load, and run automated strategies. The live workspace opens through Deriv’s secure login.</p>
             <div className="preview-panels" aria-hidden="true"><span><b>01</b> Build strategy</span><span><b>02</b> Load bot</span><span><b>03</b> Run with confidence</span></div>
-            <a className="modal-cta" href={LOGIN_URL} target="_blank" rel="noreferrer">Continue to secure login <ArrowRight size={14} /></a>
+            <button className="modal-cta" type="button" onClick={() => startOAuth(false)}>Continue to secure login <ArrowRight size={14} /></button>
           </section>
+        </div>
+      )}
+
+      {oauthStatus !== "idle" && oauthStatus !== "starting" && (
+        <div className={`oauth-status oauth-status--${oauthStatus}`} role="status" aria-live="polite">
+          <span className="oauth-status-dot" />
+          <div><strong>{oauthStatus === "processing" ? "Connecting Deriv" : oauthStatus === "success" ? "Connection complete" : "Sign-in needs attention"}</strong><p>{oauthMessage}</p></div>
+          {oauthStatus !== "processing" && <button type="button" onClick={() => setOauthStatus("idle")} aria-label="Dismiss sign-in message"><X size={15} /></button>}
         </div>
       )}
     </main>
