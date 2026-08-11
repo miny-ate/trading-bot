@@ -1,0 +1,19 @@
+export type BotRunProfile = {
+  name: string;
+  contractType: string;
+  underlyingSymbol: string;
+  currency: string;
+  amount: number;
+  duration: number;
+  durationUnit: string;
+  barrier?: string;
+  growthRate?: number;
+  multiplier?: number;
+};
+
+type BotResponse = { msg_type?: string; error?: { message?: string }; proposal?: Record<string, unknown>; buy?: Record<string, unknown>; [key: string]: unknown };
+async function getAuthenticatedSocketUrl(token: string, accountId: string) { const response = await fetch('/api/deriv/otp', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId }) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error || body?.errors?.[0]?.message || 'Unable to open the authenticated Deriv session.'); if (!body?.data?.url) throw new Error('Deriv did not return an authenticated trading URL.'); return String(body.data.url); }
+function openSocket(url: string) { return new Promise<WebSocket>((resolve, reject) => { const socket = new WebSocket(url); const timer = window.setTimeout(() => { socket.close(); reject(new Error('Deriv trading session timed out.')); }, 15000); socket.onopen = () => { window.clearTimeout(timer); resolve(socket); }; socket.onerror = () => { window.clearTimeout(timer); reject(new Error('Deriv trading session could not connect.')); }; }); }
+function waitFor(socket: WebSocket, predicate: (message: BotResponse) => boolean) { return new Promise<BotResponse>((resolve, reject) => { const timer = window.setTimeout(() => { socket.removeEventListener('message', handler); reject(new Error('Deriv did not respond in time.')); }, 15000); const handler = (event: MessageEvent) => { const message = JSON.parse(String(event.data)) as BotResponse; if (message.error) { window.clearTimeout(timer); socket.removeEventListener('message', handler); reject(new Error(message.error.message || 'Deriv rejected the bot request.')); } else if (predicate(message)) { window.clearTimeout(timer); socket.removeEventListener('message', handler); resolve(message); } }; socket.addEventListener('message', handler); }); }
+export async function previewBot(token: string, accountId: string, profile: BotRunProfile) { const socket = await openSocket(await getAuthenticatedSocketUrl(token, accountId)); try { const request: Record<string, unknown> = { proposal: 1, amount: profile.amount, basis: 'stake', contract_type: profile.contractType, currency: profile.currency, duration: profile.duration, duration_unit: profile.durationUnit, underlying_symbol: profile.underlyingSymbol, subscribe: 0, req_id: 1 }; if (profile.barrier) request.barrier = profile.barrier; if (profile.growthRate) request.growth_rate = profile.growthRate; if (profile.multiplier) request.multiplier = profile.multiplier; socket.send(JSON.stringify(request)); const response = await waitFor(socket, (message) => message.msg_type === 'proposal'); const proposal = response.proposal || {}; return { id: String(proposal.id || ''), askPrice: Number(proposal.ask_price || profile.amount), payout: Number(proposal.payout || 0), display: String(proposal.longcode || `${profile.contractType} · ${profile.underlyingSymbol}`) }; } finally { socket.close(); } }
+export async function buyBot(token: string, accountId: string, profile: BotRunProfile, proposalId: string, price: number) { const socket = await openSocket(await getAuthenticatedSocketUrl(token, accountId)); try { socket.send(JSON.stringify({ buy: proposalId, price, req_id: 2 })); const response = await waitFor(socket, (message) => message.msg_type === 'buy'); const buy = response.buy || {}; return { contractId: String(buy.contract_id || ''), transactionId: String(buy.transaction_id || ''), buyPrice: Number(buy.buy_price || price), profileName: profile.name }; } finally { socket.close(); } }
