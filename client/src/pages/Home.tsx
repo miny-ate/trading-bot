@@ -2,9 +2,11 @@
 import { ArrowRight, Bot, ExternalLink, LogIn, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { beginDerivOAuth, clearOAuthRequest, DERIV_CLIENT_ID, DERIV_REDIRECT_URI, getStoredOAuthRequest } from "@/lib/derivOAuth";
+import { DerivAccount, fetchDerivAccounts } from "@/lib/derivAccounts";
 
 const TOKEN_STORAGE_KEY = "ernest_deriv_access_token";
 type OAuthStatus = "idle" | "starting" | "processing" | "success" | "error";
+type AccountStatus = "idle" | "loading" | "success" | "error";
 
 const marketItems = [
   ["↗", "Volatility 100", "+1.86%", true],
@@ -29,7 +31,15 @@ export default function Home() {
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>("idle");
   const [oauthMessage, setOauthMessage] = useState("");
+  const [accounts, setAccounts] = useState<DerivAccount[]>([]);
+  const [accountStatus, setAccountStatus] = useState<AccountStatus>("idle");
+  const [accountMessage, setAccountMessage] = useState("");
   const callbackHandledRef = useRef(false);
+
+  const syncAccounts = (accessToken: string) => {
+    setAccountStatus("loading"); setAccountMessage("Syncing your Deriv accounts…");
+    void fetchDerivAccounts(accessToken).then((nextAccounts) => { setAccounts(nextAccounts); setAccountStatus("success"); setAccountMessage(nextAccounts.length ? "Live account data synced from Deriv." : "No Options accounts were returned for this connection."); }).catch((error: Error) => { setAccounts([]); setAccountStatus("error"); setAccountMessage(error.message || "Unable to sync Deriv accounts."); });
+  };
 
   const startOAuth = (signup = false) => {
     setOauthStatus("starting");
@@ -51,9 +61,11 @@ export default function Home() {
     if (!code || !returnedState || !storedRequest || returnedState !== storedRequest.state) { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage("The OAuth security check failed. Please start sign-in again."); return; }
     setOauthStatus("processing"); setOauthMessage("Finishing your secure Deriv connection…");
     fetch("/api/oauth/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, code_verifier: storedRequest.codeVerifier, redirect_uri: DERIV_REDIRECT_URI, client_id: DERIV_CLIENT_ID }) })
-      .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok || !data.access_token) throw new Error(data.error || "Deriv token exchange failed."); sessionStorage.setItem(TOKEN_STORAGE_KEY, data.access_token); if (data.expires_in) sessionStorage.setItem("ernest_deriv_token_expires_at", String(Date.now() + data.expires_in * 1000)); clearOAuthRequest(); setOauthStatus("success"); setOauthMessage("Your Deriv account is connected. Ernest is ready for your workspace."); })
+      .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok || !data.access_token) throw new Error(data.error || "Deriv token exchange failed."); sessionStorage.setItem(TOKEN_STORAGE_KEY, data.access_token); if (data.expires_in) sessionStorage.setItem("ernest_deriv_token_expires_at", String(Date.now() + data.expires_in * 1000)); clearOAuthRequest(); setOauthStatus("success"); setOauthMessage("Your Deriv account is connected. Ernest is ready for your workspace."); syncAccounts(data.access_token); })
       .catch((error: Error) => { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage(error.message || "Unable to complete Deriv sign-in."); });
   }, []);
+
+  useEffect(() => { const existingToken = sessionStorage.getItem(TOKEN_STORAGE_KEY); if (existingToken) syncAccounts(existingToken); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +195,16 @@ export default function Home() {
             <button className="modal-cta" type="button" onClick={() => startOAuth(false)}>Continue to secure login <ArrowRight size={14} /></button>
           </section>
         </div>
+      )}
+
+      {accountStatus !== "idle" && (
+        <section className={`account-sync-panel account-sync-panel--${accountStatus}`} aria-live="polite" aria-label="Deriv account synchronization">
+          <div className="account-sync-heading"><div><span className="account-sync-kicker"><i /> Ernest account sync</span><h2>{accountStatus === "loading" ? "Syncing your trading accounts" : accountStatus === "error" ? "Account sync needs attention" : "Your Deriv accounts"}</h2></div><button type="button" onClick={() => { const token = sessionStorage.getItem(TOKEN_STORAGE_KEY); if (token) syncAccounts(token); }} aria-label="Refresh Deriv accounts"><span>↻</span> Refresh</button></div>
+          <p className="account-sync-message">{accountMessage}</p>
+          {accountStatus === "loading" && <div className="account-sync-skeletons"><span /><span /><span /></div>}
+          {accountStatus === "error" && <p className="account-sync-help">Check that the Ernest Deriv app includes the <strong>trade</strong> scope, then reconnect your account.</p>}
+          {accountStatus === "success" && accounts.length > 0 && <div className="account-sync-grid">{accounts.map((account) => <article className="account-card" key={account.id}><div><span className={`account-type-dot ${account.isDemo ? "account-type-dot--demo" : ""}`} /><strong>{account.label}</strong></div><small>{account.isDemo ? "Demo" : "Live"} · {account.accountType}</small><b>{account.balance === null ? "—" : new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(account.balance)} <em>{account.currency}</em></b></article>)}</div>}
+        </section>
       )}
 
       {oauthStatus !== "idle" && oauthStatus !== "starting" && (
