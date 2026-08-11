@@ -3,6 +3,7 @@ import { ArrowRight, Bot, ExternalLink, LogIn, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { beginDerivOAuth, clearOAuthRequest, DERIV_CLIENT_ID, DERIV_REDIRECT_URI, getStoredOAuthRequest } from "@/lib/derivOAuth";
 import { DerivAccount, fetchDerivAccounts } from "@/lib/derivAccounts";
+import Workspace from "./Workspace";
 
 const TOKEN_STORAGE_KEY = "ernest_deriv_access_token";
 type OAuthStatus = "idle" | "starting" | "processing" | "success" | "error";
@@ -61,11 +62,13 @@ export default function Home() {
     if (!code || !returnedState || !storedRequest || returnedState !== storedRequest.state) { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage("The OAuth security check failed. Please start sign-in again."); return; }
     setOauthStatus("processing"); setOauthMessage("Finishing your secure Deriv connection…");
     fetch("/api/oauth/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, code_verifier: storedRequest.codeVerifier, redirect_uri: DERIV_REDIRECT_URI, client_id: DERIV_CLIENT_ID }) })
-      .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok || !data.access_token) throw new Error(data.error || "Deriv token exchange failed."); sessionStorage.setItem(TOKEN_STORAGE_KEY, data.access_token); if (data.expires_in) sessionStorage.setItem("ernest_deriv_token_expires_at", String(Date.now() + data.expires_in * 1000)); clearOAuthRequest(); setOauthStatus("success"); setOauthMessage("Your Deriv account is connected. Ernest is ready for your workspace."); syncAccounts(data.access_token); window.location.assign("/workspace"); })
+      .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok || !data.access_token) throw new Error(data.error || "Deriv token exchange failed."); sessionStorage.setItem(TOKEN_STORAGE_KEY, data.access_token); if (data.expires_in) sessionStorage.setItem("ernest_deriv_token_expires_at", String(Date.now() + data.expires_in * 1000)); clearOAuthRequest(); setOauthStatus("success"); setOauthMessage("Your Deriv account is connected. Ernest is ready for your workspace."); syncAccounts(data.access_token); window.location.assign("/?view=workspace"); })
       .catch((error: Error) => { clearOAuthRequest(); setOauthStatus("error"); setOauthMessage(error.message || "Unable to complete Deriv sign-in."); });
   }, []);
 
-  useEffect(() => { const existingToken = sessionStorage.getItem(TOKEN_STORAGE_KEY); if (existingToken && window.location.pathname === "/") { window.location.assign("/workspace"); return; } if (existingToken) syncAccounts(existingToken); }, []);
+  useEffect(() => { const existingToken = sessionStorage.getItem(TOKEN_STORAGE_KEY); if (existingToken && window.location.pathname === "/" && new URLSearchParams(window.location.search).get("view") !== "workspace") { window.location.assign("/?view=workspace"); return; } if (existingToken) syncAccounts(existingToken); }, []);
+
+  if (typeof window !== "undefined" && sessionStorage.getItem(TOKEN_STORAGE_KEY) && new URLSearchParams(window.location.search).get("view") === "workspace") return <Workspace />;
 
   useEffect(() => {
     let cancelled = false;
