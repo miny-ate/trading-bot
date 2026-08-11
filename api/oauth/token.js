@@ -1,7 +1,7 @@
 const DERIV_CLIENT_ID = process.env.DERIV_CLIENT_ID || '3434Bcz0PN0zjyY91841d';
 const DERIV_REDIRECT_URI = process.env.DERIV_REDIRECT_URI || 'https://ernest.co.ke';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
