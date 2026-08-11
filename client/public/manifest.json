@@ -6,8 +6,8 @@
   "background_color": "#020916",
   "theme_color": "#020916",
   "icons": [{
-    "src": "/manus-storage/ernest-mark_bbf02849.png",
+    "src": "/assets/ernest-mark.webp",
     "sizes": "192x192",
-    "type": "image/png"
+    "type": "image/webp"
   }]
 }

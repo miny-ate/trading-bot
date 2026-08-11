@@ -77,7 +77,7 @@ export default function Home() {
     <main className="landing-page">
       <nav className="top-nav" aria-label="Primary navigation">
         <a className="brand" href="/" aria-label="Ernest home">
-          <img src="/manus-storage/ernest-mark_bbf02849.png" alt="" className="brand-mark" />
+          <img src="/assets/ernest-mark.webp" alt="" className="brand-mark" />
           <span>Ernest</span>
         </a>
         <div className="nav-actions">
